@@ -6,11 +6,11 @@ from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'credo-dev-2026')
-app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+DB_PATH = os.environ.get('CREDO_DB_PATH', '/tmp/credo.db')
 
 def init_db():
-    conn = sqlite3.connect('credo.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (id TEXT, phone TEXT, name TEXT, created_at TEXT)''')
@@ -33,7 +33,7 @@ def pay():
     phone = data.get('phone')
     amount = data.get('amount', 2500)
     eval_id = str(uuid.uuid4())
-    conn = sqlite3.connect('credo.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT INTO evaluations (id, user_id, status, paid, created_at) VALUES (?, ?, ?, ?, ?)",
               (eval_id, phone, 'pending', 1, datetime.now().isoformat()))
