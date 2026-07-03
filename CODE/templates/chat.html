@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credo — Analyse</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
+            <span class="text-2xl font-bold text-indigo-600">Credo</span>
+        </div>
+    </nav>
+
+    <div class="max-w-2xl mx-auto px-4 py-8">
+        <div id="step-payment" class="bg-white rounded-xl p-8 shadow-sm">
+            <h2 class="text-2xl font-bold mb-4">Paiement</h2>
+            <p class="text-gray-600 mb-6">Choisis ton offre pour débloquer l'analyse.</p>
+            <div class="space-y-4 mb-6">
+                <label class="block border rounded-lg p-4 cursor-pointer hover:border-indigo-600">
+                    <input type="radio" name="plan" value="2500" class="mr-3" checked>
+                    <span class="font-semibold">Rapport Simple</span>
+                    <span class="float-right text-indigo-600 font-bold">2,500 FCFA</span>
+                </label>
+                <label class="block border rounded-lg p-4 cursor-pointer hover:border-indigo-600">
+                    <input type="radio" name="plan" value="5000" class="mr-3">
+                    <span class="font-semibold">Rapport Complet</span>
+                    <span class="float-right text-indigo-600 font-bold">5,000 FCFA</span>
+                </label>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">Numéro Mobile Money</label>
+                <input type="tel" id="phone" class="w-full border rounded-lg p-3" placeholder="Ex: 90 00 00 00">
+            </div>
+            <button onclick="pay()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700">
+                Payer et commencer
+            </button>
+        </div>
+
+        <div id="step-chat" class="hidden">
+            <div class="bg-white rounded-xl p-8 shadow-sm mb-4">
+                <div id="messages" class="space-y-4 mb-6 max-h-96 overflow-y-auto">
+                    <div class="bg-indigo-50 p-4 rounded-lg">
+                        <p class="font-medium">Credo IA</p>
+                        <p class="text-gray-700 mt-1">Bienvenue ! Je vais t'aider à vérifier ta solvabilité. Quelle est ton activité principale ?</p>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" id="chat-input" class="flex-1 border rounded-lg p-3" placeholder="Réponds ici...">
+                    <button onclick="sendMessage()" class="bg-indigo-600 text-white px-6 rounded-lg hover:bg-indigo-700">Envoyer</button>
+                </div>
+            </div>
+
+            <div id="step-upload" class="hidden bg-white rounded-xl p-8 shadow-sm mb-4">
+                <h3 class="font-semibold mb-4">Documents requis</h3>
+                <div class="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-indigo-600">
+                    <p class="text-gray-600">Clique pour uploader</p>
+                    <p class="text-sm text-gray-400">Pièce d'identité, preuve de revenus, etc.</p>
+                    <input type="file" class="hidden" multiple>
+                </div>
+            </div>
+
+            <div id="step-result" class="hidden bg-white rounded-xl p-8 shadow-sm">
+                <h2 class="text-2xl font-bold mb-6">Ton résultat</h2>
+                <div id="result-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let questions = [
+            "Quelle est ton activité principale ?",
+            "Depuis combien de temps exerces-tu ?",
+            "Quel est ton revenu mensuel moyen ?",
+            "Quel montant souhaites-tu emprunter ?",
+            "As-tu déjà eu un crédit ?",
+            "As-tu une épargne ?",
+            "Quelle est la destination du prêt ?",
+            "As-tu des garanties à proposer ?"
+        ];
+        let qIdx = 0;
+        let answers = [];
+
+        function pay() {
+            const plan = document.querySelector('input[name="plan"]:checked').value;
+            const phone = document.getElementById('phone').value;
+            if (!phone) { alert('Numéro requis'); return; }
+
+            document.getElementById('step-payment').classList.add('hidden');
+            document.getElementById('step-chat').classList.remove('hidden');
+
+            fetch('/api/pay', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({phone, amount: parseInt(plan)})
+            });
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const msgDiv = document.getElementById('messages');
+            msgDiv.innerHTML += `<div class="bg-gray-100 p-4 rounded-lg"><p class="font-medium">Toi</p><p class="text-gray-700 mt-1">${text}</p></div>`;
+            answers.push({q: questions[qIdx-1] || 'question', a: text});
+            input.value = '';
+
+            if (qIdx < questions.length) {
+                setTimeout(() => {
+                    msgDiv.innerHTML += `<div class="bg-indigo-50 p-4 rounded-lg"><p class="font-medium">Credo IA</p><p class="text-gray-700 mt-1">${questions[qIdx]}</p></div>`;
+                    qIdx++;
+                    msgDiv.scrollTop = msgDiv.scrollHeight;
+                }, 500);
+            } else {
+                setTimeout(() => analyze(), 500);
+            }
+        }
+
+        function analyze() {
+            fetch('/api/analyze', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({answers})
+            }).then(r => r.json()).then(data => {
+                document.getElementById('step-chat').classList.add('hidden');
+                const result = document.getElementById('result-content');
+                result.innerHTML = `
+                    <div class="text-center mb-6">
+                        <div class="text-5xl font-bold text-indigo-600 mb-2">${data.score}/100</div>
+                        <p class="text-lg font-semibold">Risque ${data.risk}</p>
+                    </div>
+                    <div class="border-t pt-4 mb-4">
+                        <p class="text-gray-600">Montant maximum estimé:</p>
+                        <p class="text-2xl font-bold">${data.max_amount.toLocaleString()} FCFA</p>
+                    </div>
+                    <div class="border-t pt-4 mb-4">
+                        <p class="font-semibold mb-2">Institutions partenaires recommandées:</p>
+                        ${data.partners.map(p => `<div class="border rounded-lg p-3 mb-2"><p class="font-medium">${p.name}</p><p class="text-gray-600">Jusqu'à ${p.amount.toLocaleString()} FCFA à ${p.rate}</p></div>`).join('')}
+                    </div>
+                    <div class="border-t pt-4">
+                        <p class="text-gray-600 italic">${data.advice}</p>
+                    </div>
+                    <button onclick="window.print()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 mt-4">Télécharger le rapport</button>
+                `;
+                document.getElementById('step-result').classList.remove('hidden');
+            });
+        }
+
+        // Initialiser premier message
+        setTimeout(() => {
+            document.getElementById('messages').innerHTML +=
+                `<div class="bg-indigo-50 p-4 rounded-lg"><p class="font-medium">Credo IA</p><p class="text-gray-700 mt-1">${questions[0]}</p></div>`;
+            qIdx++;
+        }, 1000);
+    </script>
+</body>
+</html>
