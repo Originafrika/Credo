@@ -192,7 +192,9 @@ def score_from_answers(answers: list[dict]) -> dict:
 
 
 def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool, realistic_max: int) -> str:
-    qa = "\n".join(f"- {a.get('q', '')}: {a.get('a', '')}" for a in answers)
+    # Compacter l'historique pour ne pas bruler le contexte
+    compacted = _compact_history(answers)
+    qa = "\n".join(f"- {a.get('q', '')}: {a.get('a', '')}" for a in compacted)
 
     # LLM query DB au moment du scoring
     sector_hint = ""
@@ -268,59 +270,76 @@ Retourne CE JSON:
 
 
 # ==============================================================
-# CHAT / QUESTIONS
+# CHAT / QUESTIONS — Questionnaire puis follow-ups
 # ==============================================================
 
+CTX_LIMIT = 128000
+CTX_TARGET = 75000
+MAX_EXCHANGES = 10
+
+
+def _estimate_tokens(text: str) -> int:
+    return len(text) // 4
+
+
+def _compact_history(answers: list[dict]) -> list[dict]:
+    """Compacter si l'historique depasse la cible: resume + 3 derniers echanges."""
+    full = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in answers)
+    if _estimate_tokens(full) < CTX_TARGET:
+        return answers
+    covered = {}
+    for a in answers:
+        covered[a.get("q", "")[:30]] = a.get("a", "")
+    summary = "; ".join(f"{k} => {v[:80]}" for k, v in covered.items())
+    recent = answers[-3:]
+    return [{"q": "--- RESUME PROFIL ---", "a": summary}] + recent
+
+
 def build_first_question() -> str:
-    return "Bonjour, je suis Credo. Decris-moi en quelques phrases ton projet ou le besoin pour lequel tu as besoin d'un pret : quel secteur, combien, pour quoi faire ?"
+    return """Bonjour, je suis Credo. Reponds en UN SEUL message a ces questions :
+
+1. Quelle est ton activite et ton projet ? (secteur, depuis quand, description)
+2. Combien gagnes-tu par mois environ ?
+3. Combien veux-tu emprunter exactement ?
+4. As-tu des garanties ? (terrain, boutique, vehicule, epargne, materiel)
+5. As-tu deja eu un credit auparavant ?
+
+Reponds aux 5 en un seul message. Ca permet de gagner du temps."""
 
 
 def build_next_question(answers: list[dict]) -> str:
-    """Pose UNE question basee sur ce qui manque vraiment."""
-    answered_topics = set()
-    for a in answers:
-        q = (a.get("q") or "").lower()[:15]
-        r = (a.get("a") or "").lower()
-        answered_topics.add(q)
-        if "decris" in q:
-            # Check what info the user already gave in description
-            if any(w in r for w in ["million", "mf", "f", "franc", "fca"]):
-                answered_topics.add("montant")
-            if any(w in r for w in ["commerce", "agriculture", "service", "artisanat", "labo", "tech", "ia", "numerique"]):
-                answered_topics.add("activite")
-            if any(w in r for w in ["mois", "an", "depuis", "janvier", "2024", "2025", "2026"]):
-                answered_topics.add("duree")
+    """Le LLM decide si infos suffisantes (DONE) ou besoin d'une clarification."""
+    if len(answers) >= MAX_EXCHANGES - 1:
+        return "DONE"
 
-    # Build a prompt for Groq
-    hist = "\n".join(f"- Q: {a.get('q', '')}\n  R: {a.get('a', '')}" for a in answers)
+    context = _compact_history(answers)
+    hist = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in context)
 
-    prompt = f"""Tu es un conseiller credit qui pose UNE question a la fois. En francais, tutoie ("tu").
-
-Le client a repondu:
+    prompt = f"""Tu es un conseiller credit. Le client a repondu:
 {hist}
 
-Choisis LE sujet le plus critique PARMI ceux-ci (ne pose pas de question deja repondue):
-- ACTIVITE: si tu ne sais pas ce qu'il fait
-- MONTANT: si tu ne sais pas combien il veut
-- REVENU: si tu ne sais pas combien il gagne par mois
-- DUREE: si tu ne sais pas depuis quand il exerce
-- EPARGNE: si tu ne sais pas s'il epargne
-- CREDIT: si tu ne sais pas s'il a deja eu un credit
-- GARANTIE: si tu ne sais pas s'il a des garanties
+Verifie si tu as TOUS ces champs pour scorer (il faut au moins un revenu, un montant, une activite, une duree):
+- ACTIVITE: ce qu'il fait, secteur
+- MONTANT: combien il veut
+- REVENU: combien il gagne/mois
+- DUREE: depuis quand
+- EPARGNE: s'il epargne
+- CREDIT: s'il a deja eu un credit
+- GARANTIE: s'il a des garanties
 
-Si tu as TOUTES les infos necessaires pour evaluer ce profil (activite, revenu, montant, duree, epargne, credit, garantie), reponds uniquement "DONE".
-Sinon, pose UNE question. Maximum 12 mots. Naturel. En "tu"."""
+Si TOUS les champs sont couverts (meme partiellement), reponds uniquement: DONE
+Sinon, pose UNE question pour le champ le plus critique qui manque. Max 15 mots. En "tu", naturel."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
+        temperature=0.5,
         max_tokens=80,
     )
     q = resp.choices[0].message.content.strip().strip('"').strip("'")
     if "DONE" in q.upper() and len(q) < 10:
         return "DONE"
-    return q if q else "Peux-tu m'en dire plus ?"
+    return q if q else "Peux-tu preciser ?"
 
 # ==============================================================
 # DOCUMENT EXTRACTION (Vision)
