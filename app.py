@@ -26,8 +26,7 @@ if not NEON_DSN:
 # ── DB layer ──
 
 def get_db():
-    conn = psycopg2.connect(NEON_DSN)
-    return conn
+    return psycopg2.connect(NEON_DSN)
 
 def db_execute(conn, sql, params=None):
     is_select = sql.strip().upper().startswith("SELECT")
@@ -53,7 +52,7 @@ def db_close(conn):
 def init_db():
     conn = get_db()
     for sql in [
-        "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, phone TEXT, plan TEXT DEFAULT '5000', status TEXT DEFAULT 'payment_wait', code TEXT, payment_ref TEXT, payment_verified INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), completed_at TEXT)",
+        "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, phone TEXT, plan TEXT DEFAULT '5000', status TEXT DEFAULT 'payment_wait', code TEXT, payment_ref TEXT, payment_verified INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), completed_at TEXT, questionnaire TEXT, question_idx INTEGER DEFAULT 0)",
         "CREATE TABLE IF NOT EXISTS messages (id SERIAL PRIMARY KEY, session_id TEXT, role TEXT, question TEXT, answer TEXT, created_at TEXT DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS documents (id SERIAL PRIMARY KEY, session_id TEXT, doc_type TEXT, storage_url TEXT, extracted_json TEXT, created_at TEXT DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS results (id SERIAL PRIMARY KEY, session_id TEXT UNIQUE, score INTEGER, risk TEXT, max_amount INTEGER, partners TEXT, missing_docs TEXT, tips TEXT, code TEXT UNIQUE, loan_amount INTEGER, analysis TEXT, created_at TEXT DEFAULT NOW())",
@@ -120,18 +119,28 @@ def chat_message(session_id):
     if not s:
         db_close(conn)
         return jsonify({"error": "Session invalide"}), 404
+
     last = db_fetchone(conn, "SELECT question FROM messages WHERE session_id = %s AND role = 'ia' ORDER BY id DESC LIMIT 1", (session_id,))
     last_q = last["question"] if last else "Question"
     db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, last_q, answer))
+
     user_count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
+
+    # First answer → generate questionnaire, return for progressive blocks
     if user_count and user_count["c"] == 1:
         try:
             questions = build_questionnaire(answer)
         except Exception:
             db_close(conn)
             return jsonify({"error": "Credo IA indisponible."}), 503
+        if questions:
+            db_execute(conn, "UPDATE sessions SET questionnaire = %s, question_idx = 0 WHERE id = %s", (json.dumps(questions), session_id))
+            db_close(conn)
+            return jsonify({"type": "questionnaire", "questions": questions, "done": False})
         db_close(conn)
-        return jsonify({"type": "questionnaire", "questions": questions, "done": False})
+        return jsonify({"done": True})
+
+    # Normal single-question flow (after questionnaire or standalone)
     msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
     answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
     try:
@@ -147,6 +156,7 @@ def chat_message(session_id):
 
 @app.route("/api/chat/<session_id>/questionnaire-answers", methods=["POST"])
 def submit_questionnaire(session_id):
+    """Reçoit toutes les reponses du formulaire progressif en une seule requete."""
     data = request.json
     answers_list = data.get("answers", [])
     questions_list = data.get("questions", [])
@@ -162,19 +172,9 @@ def submit_questionnaire(session_id):
             continue
         q_text = questions_list[i] if i < len(questions_list) else "Question {}".format(i + 1)
         db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, q_text, ans.strip()))
-    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-    user_answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-    try:
-        next_q = build_next_question(user_answers)
-    except Exception:
-        db_close(conn)
-        return jsonify({"error": "Credo IA indisponible."}), 503
-    if next_q == "DONE":
-        db_close(conn)
-        return jsonify({"done": True})
-    db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, next_q))
+    db_execute(conn, "UPDATE sessions SET questionnaire = NULL, question_idx = 0 WHERE id = %s", (session_id,))
     db_close(conn)
-    return jsonify({"question": next_q, "done": False})
+    return jsonify({"done": True, "accepted": len([a for a in answers_list if a and a.strip()])})
 
 @app.route("/api/chat/<session_id>/analyze", methods=["POST"])
 def analyze(session_id):

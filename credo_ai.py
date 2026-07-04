@@ -20,14 +20,12 @@ NEON_DSN = os.environ.get("NEON_DSN", "")
 # ==============================================================
 
 def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> tuple[list[dict], list[dict], list[dict]]:
-    """LLM querie la DB au moment du scoring: partenaires + produits + regles metier."""
     if not NEON_DSN:
         return [], [], []
     try:
         conn = psycopg2.connect(NEON_DSN)
         cur = conn.cursor()
 
-        # query partners
         sectors = ['commerce', 'agriculture', 'service', 'artisanat']
         if sector_hint:
             for s in sectors:
@@ -57,7 +55,6 @@ def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> tu
             })
             partner_ids.append(r[10])
 
-        # query products for matching partners
         products = []
         if partner_ids:
             cur.execute(
@@ -77,7 +74,6 @@ def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> tu
                     "collateral_required": r[7], "requirements": r[8], "description": r[9],
                 })
 
-        # query relevant knowledge base rules
         cur.execute(
             """SELECT category, title, content FROM knowledge_base ORDER BY category LIMIT 20"""
         )
@@ -102,7 +98,6 @@ def generate_code() -> str:
 
 
 def _extract_numbers(text: str) -> list[int]:
-    """Extrait tous les nombres d'un texte (supporte 1.000.000, 1 000 000, 1000000)"""
     text = text.replace(".", "").replace(" ", "").replace(",", ".")
     return [int(float(x)) for x in re.findall(r"\d+(?:\.\d+)?", text)]
 
@@ -123,11 +118,9 @@ def _estimate_monthly_revenue(answers: list[dict]) -> int:
 
 
 def _extract_amount_wanted(description: str, answers: list[dict]) -> int:
-    """Trouve le montant demande. Check description + questions reponses."""
     nums = _extract_numbers(description)
     if nums:
         return max(nums)
-
     for a in answers:
         q = (a.get("q") or "").lower()
         r = (a.get("a") or "").lower()
@@ -139,23 +132,19 @@ def _extract_amount_wanted(description: str, answers: list[dict]) -> int:
 
 
 def _compute_realistic_max(monthly_revenue: int, has_collateral: bool, amount_wanted: int) -> int:
-    """Calcule un montant realiste base sur le revenu.
-    Regle: sans collaterale max 6x revenu, avec collaterale max 24x."""
     cap = 24 if has_collateral else 6
     realistic = monthly_revenue * cap
-
     if realistic < 50000:
-        realistic = 50000  # micro-credit minimum
-
-    if amount_wanted > 0 and amount_wanted > realistic:
-        return realistic
-
-    return min(amount_wanted, realistic) if amount_wanted > 0 else realistic
+        realistic = 50000
+    capped = min(amount_wanted, realistic) if amount_wanted > 0 else realistic
+    return capped
 
 
 # ==============================================================
 # SCORING
 # ==============================================================
+
+MFI_NAMES = ["fucec", "wages", "cofina", "baobab", "micro", "finance"]
 
 def score_from_answers(answers: list[dict]) -> dict:
     description = ""
@@ -171,12 +160,17 @@ def score_from_answers(answers: list[dict]) -> dict:
         r = (a.get("a") or "").lower()
         if "garantie" in (a.get("q") or "").lower() and "oui" in r:
             has_collateral = True
-        if "garantie" in r and ("terrain" in r or "boutique" in r or "maison" in r or "vehicule" in r or "oui" in r):
+        if "garantie" in r and ("terrain" in r or "boutique" in r or "maison" in r or "vehicule" in r or "oui" in r or "iphone" in r):
             has_collateral = True
 
     realistic_max = _compute_realistic_max(monthly_income, has_collateral, amount_wanted)
+    risk = "Eleve"
+    if has_collateral and monthly_income >= 200000:
+        risk = "Moyen"
+    if has_collateral and monthly_income >= 500000:
+        risk = "Faible"
 
-    prompt = _build_groq_prompt(answers, monthly_income, amount_wanted, has_collateral, realistic_max)
+    prompt = _build_groq_prompt(answers, monthly_income, amount_wanted, has_collateral, realistic_max, risk)
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -187,16 +181,35 @@ def score_from_answers(answers: list[dict]) -> dict:
     data = json.loads(resp.choices[0].message.content)
     data["model"] = SCORE_MODEL
     data["tokens_used"] = getattr(resp.usage, "total_tokens", 0)
-    _log(f"Groq score OK: {data.get('score')}, tokens: {data['tokens_used']}")
+
+    # Post-process: clamp max_amount to realistic_max
+    if data.get("max_amount", 0) > realistic_max:
+        data["max_amount"] = realistic_max
+
+    # Post-process: if risk is Eleve, filter partners to MFI only
+    risk_val = data.get("risk", "Eleve")
+    partners = data.get("recommended_partners", [])
+    if risk_val == "Eleve":
+        data["recommended_partners"] = [
+            p for p in partners
+            if any(mfi in (p.get("name", "") or "").lower() for mfi in MFI_NAMES)
+        ]
+        # If no MFI partners matched, force default
+        if not data["recommended_partners"]:
+            data["recommended_partners"] = [
+                {"name": "FUCEC-Togo", "product": "Credit Micro-Entreprise", "amount": min(realistic_max, 500000), "rate": "18%", "reason": "Microfinance adaptee aux profils sans garantie materielle, avec accompagnement personnalise."},
+                {"name": "WAGES Togo", "product": "Credit Femmes", "amount": min(realistic_max, 300000), "rate": "20%", "reason": "Credit solidaire accessible sans garantie, ideal pour demarrage d'activite."},
+                {"name": "Cofina Togo", "product": "Credit Rapid", "amount": min(realistic_max, 200000), "rate": "22%", "reason": "Credit de proximite sans garantie, remboursement flexible."},
+            ]
+
+    _log(f"Groq score OK: {data.get('score')}, max: {data.get('max_amount')}, risk: {data.get('risk')}, tokens: {data['tokens_used']}")
     return data
 
 
-def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool, realistic_max: int) -> str:
-    # Compacter l'historique pour ne pas bruler le contexte
+def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool, realistic_max: int, risk_label: str) -> str:
     compacted = _compact_history(answers)
     qa = "\n".join(f"- {a.get('q', '')}: {a.get('a', '')}" for a in compacted)
 
-    # LLM query DB au moment du scoring
     sector_hint = ""
     for a in answers:
         r = (a.get("a") or "").lower()
@@ -210,10 +223,11 @@ def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral
             sector_hint = "artisanat"
 
     partners, products, rules = _get_partners(realistic_max, sector_hint)
+
     partners_str = "\n".join(
         f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs: {', '.join(p['docs'])}."
         for p in partners
-    ) if partners else "Aucun partenaire dans la base pour ce montant secteur. Base-toi sur les microfinances generalistes UEMOA (FUCEC, WAGES, Cofina, BAOBAB)."
+    ) if partners else ""
 
     products_str = "\n".join(
         f"- {pr['product']} ({pr['partner']}): {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'])}."
@@ -225,7 +239,7 @@ def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral
         for r in rules[:6]
     ) if rules else ""
 
-    return f"""Tu es un analyste de credit pour le marche UEMOA. Tu analyses CE profil precis, PAS un profil generique.
+    return f"""Tu es un analyste de credit pour le marche UEMOA. Analyse CE profil precis.
 
 Profil:
 {qa}
@@ -233,7 +247,8 @@ Profil:
 Revenu mensuel: {income} FCFA
 Montant demande: {wanted} FCFA
 Collateral: {"oui" if collateral else "non"}
-Montant realiste max (calcule): {realistic_max} FCFA
+Montant realiste max: {realistic_max} FCFA (regle: {6 if not collateral else 24}x revenu mensuel)
+Risque preliminaire: {risk_label}
 
 --- PARTENAIRES DISPONIBLES ---
 {partners_str}
@@ -242,30 +257,28 @@ Montant realiste max (calcule): {realistic_max} FCFA
 --- REGLES METIER ---
 {rules_str}
 
-Instructions:
-- Analyse CE profil precis, ne recopie pas de template generique
-- Mentionne les details specifiques du profil dans analysis (secteur, montant, revenu, duree)
-- Si le montant demande est irrealiste, explique POURQUOI (regle 6x/24x)
-- Choisis les partenaires parmi la liste ci-dessus — ne pas en inventer
-- Associates chaque partenaire a un produit specifique de sa gamme
-- Les improvement_tips doivent etre SPECIFIQUES a ce profil, pas des conseils generiques
-- Quand aucun partenaire trouve dans la base, recommande FUCEC-Togo, WAGES Togo, Cofina ou BAOBAB avec un produit generique
+INSTRUCTIONS STRICTES:
+1. max_amount NE PEUT PAS depasser {realistic_max} FCFA. C'est ABSOLU.
+2. Score base sur: remboursement possible (max 50% du revenu), secteur, collateral, historique
+3. Si risque = Eleve, recommande UNIQUEMENT des microfinances (FUCEC, WAGES, Cofina, BAOBAB) — JAMAIS de banques
+4. Chaque partenaire doit avoir un produit specifique
+5. analysis: cite les chiffres du profil (secteur, montant demande, revenu, collateral)
+6. missing_documents: extraits des docs requis par les partenaires recommandes
+7. improvement_tips: SPECIFIQUES a ce profil, pas generiques
 
 Retourne CE JSON:
 {{
-  "score": 450,
+  "score": 420,
   "risk": "Eleve",
-  "max_amount": 500000,
-  "analysis": "3-4 phrases SPECIFIQUES a ce profil. Cite le secteur, le montant, le revenu. Explique le verdict.",
+  "max_amount": {realistic_max},
+  "analysis": "2-3 phrases SPECIFIQUES. Cite secteur, montant, revenu. Explique le verdict.",
   "recommended_partners": [
-    {{"name": "Institution", "product": "Nom produit si disponible", "amount": 300000, "rate": "12%", "reason": "Pourquoi CE partenaire et CE produit pour CE profil"}}
+    {{"name": "Institution", "product": "Produit", "amount": {realistic_max}, "rate": "X%", "reason": "Pourquoi ce partenaire et ce produit pour CE profil"}}
   ],
   "missing_documents": ["piece_identite"],
-  "improvement_tips": ["Conseil SPECIFIQUE lie au profil, pas generique"],
+  "improvement_tips": ["Conseil SPECIFIQUE"],
   "confidence": 0.85
 }}"""
-
-
 
 
 
@@ -282,7 +295,6 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _compact_history(answers: list[dict]) -> list[dict]:
-    """Compacter si l'historique depasse la cible: resume cles + derniers echanges."""
     full = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in answers)
     if _estimate_tokens(full) < CTX_TARGET:
         return answers
@@ -299,8 +311,7 @@ def build_first_question() -> str:
 
 
 def build_questionnaire(project_desc: str) -> list[str]:
-    """LLM genere un questionnaire personnalise: query DB d'abord, puis pose les bonnes questions."""
-    # Extraire montant et secteur pour query DB
+    """LLM genere un questionnaire personnalise."""
     nums = _extract_numbers(project_desc)
     amount_hint = max(nums) if nums else 500000
     sector_hint = ""
@@ -343,7 +354,7 @@ Chaque question doit verifier UN critere precis demande par un des partenaires (
 Retourne UNIQUEMENT un tableau JSON de questions, ex:
 ["Question 1 ?", "Question 2 ?", "Question 3 ?"]
 
-Questions en francais, "tu". Autant que necessaire pour verifier toutes les conditions partenaires pertinentes."""
+Questions en francais, "tu". 5 a 8 questions maximum. Chaque question courte (< 15 mots)."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
@@ -370,15 +381,9 @@ def build_next_question(answers: list[dict]) -> str:
     prompt = f"""Tu es un conseiller credit. Le client a repondu:
 {hist}
 
-Verifie si tu peux deja evaluer ce profil. Il te faut au moins: activite, revenu, montant, et soit garantie soit epargne.
-
-Si les infos essentielles sont la (meme partielles), reponds: DONE
-Sinon:
-- S'il manque une info critique (revenu, montant, activite), pose UNE question. Max 15 mots.
-- Si tout est la mais les documents ne sont pas clairs, demande QUELS documents il peut fournir.
-- Si le client a donne des infos contradictoires ou trop vagues, clarifie UN point.
-
-En "tu", naturel. Une seule phrase."""
+Il te faut au moins: activite, revenu, montant, duree, garantie.
+Si toutes ces infos sont presentes (memes partielles), reponds: DONE
+Sinon, pose UNE question courte. Max 12 mots. Naturel, en "tu"."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,

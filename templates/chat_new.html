@@ -278,12 +278,11 @@
             white-space: nowrap;
         }
         .input-row button:hover { background: var(--amber-deep); }
-        /* Questionnaire */
+        /* Progressive questionnaire blocks */
         .q-grid {
             display: flex;
             flex-direction: column;
             gap: 0.875rem;
-            margin-bottom: 1.25rem;
         }
         .q-item label {
             display: block;
@@ -613,8 +612,7 @@
 
     <script>
         let sessionId = null;
-        let questionCount = 0;
-        let currentQuestions = [];
+        let qTotal = 0;
         let filesUploaded = 0;
 
         function startSession() {
@@ -629,19 +627,17 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({phone, plan: plan ? plan.value : '5000'})
-            }).then(r => r.json()).then(data => {
-                if (data.error) {
-                    document.getElementById('step-payment').innerHTML =
-                        `<div class="error-card"><h2>Service indisponible</h2><p>${data.error}</p></div>`;
-                    btn.disabled = false; btn.textContent = 'Payer et commencer';
-                    return;
-                }
+            }).then(r => {
+                if (r.status === 503) return r.json().then(d => { throw new Error(d.error); });
+                return r.json();
+            }).then(data => {
                 sessionId = data.session_id;
                 showStep('step-payment', 'step-chat');
                 addMsg('Credo IA', data.first_question);
-                updateProgress(0);
-            }).catch(() => {
-                alert('Erreur de connexion. Réessaie.');
+                updateProgress(0, 0);
+            }).catch(e => {
+                document.getElementById('step-payment').innerHTML =
+                    `<div class="error-card"><h2>Service indisponible</h2><p>${e.message || 'Erreur de connexion.'}</p></div>`;
                 btn.disabled = false; btn.textContent = 'Payer et commencer';
             });
         }
@@ -666,35 +662,72 @@
             m.scrollTop = m.scrollHeight;
         }
 
-        function updateProgress(n) {
-            questionCount = n;
-            document.getElementById('q-progress').textContent = `${Math.min(n, 6)}/6`;
-            document.getElementById('q-bar').style.width = `${(Math.min(n, 6) / 6) * 100}%`;
+        function updateProgress(idx, total) {
+            qTotal = total || 1;
+            const t = total || 1;
+            document.getElementById('q-progress').textContent = `${Math.min(idx, t)}/${t}`;
+            document.getElementById('q-bar').style.width = `${(Math.min(idx, t) / t) * 100}%`;
         }
 
-        function renderQuestionnaire(questions) {
-            currentQuestions = questions;
+        const BLOCK_SIZE = 3;
+        let allQuestions = [];
+        let allAnswers = [];
+        let currentBlock = 0;
+
+        function renderBlock() {
+            const start = currentBlock * BLOCK_SIZE;
+            const end = Math.min(start + BLOCK_SIZE, allQuestions.length);
+            const blockQ = allQuestions.slice(start, end);
+            const isLast = end >= allQuestions.length;
+
             const area = document.getElementById('input-area');
             let html = '<div class="q-grid">';
-            questions.forEach((q, i) => {
-                html += `<div class="q-item"><label for="q-${i}">${q}</label><input type="text" id="q-${i}" class="q-input" placeholder="Ta réponse..."></div>`;
+            blockQ.forEach((q, i) => {
+                const idx = start + i;
+                const val = allAnswers[idx] || '';
+                html += `<div class="q-item"><label for="q-${idx}">${q}</label><input type="text" id="q-${idx}" value="${val.replace(/"/g,'&quot;')}" placeholder="Ta réponse..."></div>`;
             });
-            html += `</div><button onclick="submitQuestionnaire()" class="btn btn-primary">Envoyer toutes mes réponses</button>`;
+            if (isLast) {
+                html += `<button onclick="submitAllBlocks()" class="btn btn-primary" style="margin-top:0.75rem">Terminer</button>`;
+            } else {
+                html += `<button onclick="nextBlock()" class="btn btn-primary" style="margin-top:0.75rem">Suivant</button>`;
+            }
             area.innerHTML = html;
-            document.getElementById('chat-input').style.display = 'none';
+            updateProgress(end, allQuestions.length);
+            // Focus first input
+            const first = document.querySelector('.q-item input');
+            if (first) first.focus();
         }
 
-        function submitQuestionnaire() {
-            const answers = currentQuestions.map((_, i) => document.getElementById(`q-${i}`).value.trim());
-            if (answers.every(a => !a)) { alert('Réponds à au moins une question'); return; }
+        function saveBlock() {
+            const start = currentBlock * BLOCK_SIZE;
+            const end = Math.min(start + BLOCK_SIZE, allQuestions.length);
+            for (let i = start; i < end; i++) {
+                const inp = document.getElementById(`q-${i}`);
+                if (inp) allAnswers[i] = inp.value;
+            }
+        }
 
+        function nextBlock() {
+            saveBlock();
+            currentBlock++;
+            renderBlock();
+        }
+
+        function submitAllBlocks() {
+            saveBlock();
+            // Check at least one answer
+            if (allAnswers.every(a => !a || !a.trim())) {
+                alert('Réponds à au moins une question');
+                return;
+            }
             const btn = document.querySelector('#input-area .btn');
             btn.disabled = true; btn.textContent = 'Envoi...';
 
             fetch(`/api/chat/${sessionId}/questionnaire-answers`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({answers, questions: currentQuestions})
+                body: JSON.stringify({answers: allAnswers, questions: allQuestions})
             }).then(r => {
                 if (r.status === 404) {
                     document.getElementById('step-chat').innerHTML = `<div class="error-card"><h2>Session expirée</h2><p>Ta session a expiré. <a href="/chat/new" style="color:var(--amber-deep)">Recommence ici</a>.</p></div>`;
@@ -707,21 +740,17 @@
                     document.getElementById('step-chat').innerHTML = `<div class="error-card"><h2>Service indisponible</h2><p>${data.error}</p></div>`;
                     return;
                 }
-                currentQuestions.forEach((q, i) => {
-                    addMsg('Toi', q + ' ' + answers[i]);
+                // Show all Q&A in chat
+                allQuestions.forEach((q, i) => {
+                    if (allAnswers[i] && allAnswers[i].trim()) {
+                        addMsg('Toi', q + ' ' + allAnswers[i].trim());
+                    }
                 });
-                if (data.done) {
-                    addMsg('Credo IA', 'Parfait. J\'ai assez d\'informations pour évaluer ton profil.');
-                    document.getElementById('step-upload').classList.remove('step-hidden');
-                    document.getElementById('step-upload').classList.add('step-visible');
-                    document.getElementById('btn-result').classList.remove('step-hidden');
-                    document.getElementById('input-area').classList.add('step-hidden');
-                } else {
-                    addMsg('Credo IA', data.question);
-                    const area = document.getElementById('input-area');
-                    area.innerHTML = `<div class="input-row"><input type="text" id="chat-input" placeholder="Écris ta réponse..." onkeypress="if(event.key==='Enter') sendClarification()"><button onclick="sendClarification()">Envoyer</button></div>`;
-                    document.getElementById('chat-input').focus();
-                }
+                addMsg('Credo IA', 'Merci ! J\'ai assez d\'informations pour évaluer ton profil.');
+                document.getElementById('step-upload').classList.remove('step-hidden');
+                document.getElementById('step-upload').classList.add('step-visible');
+                document.getElementById('btn-result').classList.remove('step-hidden');
+                document.getElementById('input-area').classList.add('step-hidden');
             });
         }
 
@@ -751,20 +780,23 @@
                     return;
                 }
                 if (data.type === 'questionnaire') {
-                    addMsg('Credo IA', 'Merci. Voici un questionnaire personnalisé pour évaluer ton profil :');
-                    renderQuestionnaire(data.questions);
+                    addMsg('Credo IA', 'Merci. Réponds à ces questions par blocs :');
+                    allQuestions = data.questions;
+                    allAnswers = new Array(allQuestions.length).fill('');
+                    currentBlock = 0;
+                    renderBlock();
                     inp.disabled = false;
                     return;
                 }
                 if (data.done) {
-                    addMsg('Credo IA', 'Parfait. J\'ai assez d\'informations pour évaluer ton profil.');
+                    addMsg('Credo IA', 'Merci ! J\'ai assez d\'informations pour évaluer ton profil.');
                     document.getElementById('step-upload').classList.remove('step-hidden');
                     document.getElementById('step-upload').classList.add('step-visible');
                     document.getElementById('btn-result').classList.remove('step-hidden');
                     document.getElementById('input-area').classList.add('step-hidden');
                 } else {
                     addMsg('Credo IA', data.question);
-                    updateProgress(questionCount + 1);
+                    updateProgress(0, 1);
                 }
                 inp.disabled = false;
                 inp.focus();
@@ -772,12 +804,6 @@
                 addMsg('Credo IA', 'Je n\'ai pas compris. Peux-tu reformuler ?');
                 inp.disabled = false;
             });
-        }
-
-        function sendClarification() {
-            const inp = document.getElementById('chat-input');
-            if (!inp) return;
-            sendMsg();
         }
 
         function uploadFiles(input) {
