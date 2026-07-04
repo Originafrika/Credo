@@ -299,17 +299,34 @@ def build_first_question() -> str:
 
 
 def build_questionnaire(project_desc: str) -> list[str]:
-    """LLM genere un questionnaire personnalise base sur la description du projet."""
+    """LLM genere un questionnaire personnalise: query DB d'abord, puis pose les bonnes questions."""
+    # Extraire montant et secteur pour query DB
+    nums = _extract_numbers(project_desc)
+    amount_hint = max(nums) if nums else 500000
+    sector_hint = ""
+    for w in ["commerce", "agriculture", "service", "artisanat", "tech", "ia", "numerique"]:
+        if w in project_desc.lower():
+            sector_hint = w
+            break
+    partners, products, rules = _get_partners(amount_hint, sector_hint)
+
+    partners_ctx = "\n".join(
+        f"- {p['name']}: {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}"
+        for p in partners[:6]
+    ) if partners else "Aucun partenaire trouve."
+
     prompt = f"""Le client a decrit son projet: "{project_desc}"
+Partenaires disponibles dans la base pour ce type de projet:
+{partners_ctx}
 
-Genere une liste de questions personnalisees pour evaluer sa solvabilite. Les questions doivent etre SPECIFIQUES a son projet, pas generiques.
+Genere une liste de questions personnalisees pour evaluer sa solvabilite. Les questions doivent tenir compte des partenaires reels disponibles.
 
-Couvre obligatoirement: activite, revenu, montant, duree, garanties, credit, documents.
+Couvre: activite, revenu, montant, duree, garanties, credit, documents.
 
 Retourne UNIQUEMENT un tableau JSON de questions, ex:
-["Question 1 ?", "Question 2 ?", "Question 3 ?", "Question 4 ?", "Question 5 ?", "Question 6 ?"]
+["Question 1 ?", "Question 2 ?", "Question 3 ?"]
 
-Questions en francais, "tu". 6-8 questions max. Chaque question = un sujet different."""
+Questions en francais, "tu". Autant de questions que necessaire — ni plus, ni moins."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
