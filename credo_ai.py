@@ -270,12 +270,11 @@ Retourne CE JSON:
 
 
 # ==============================================================
-# CHAT / QUESTIONS — Questionnaire puis follow-ups
+# CHAT / QUESTIONS — LLM decide combien et quoi demander
 # ==============================================================
 
 CTX_LIMIT = 128000
 CTX_TARGET = 75000
-MAX_EXCHANGES = 10
 
 
 def _estimate_tokens(text: str) -> int:
@@ -283,7 +282,7 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _compact_history(answers: list[dict]) -> list[dict]:
-    """Compacter si l'historique depasse la cible: resume + 3 derniers echanges."""
+    """Compacter si l'historique depasse la cible: resume cles + derniers echanges."""
     full = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in answers)
     if _estimate_tokens(full) < CTX_TARGET:
         return answers
@@ -296,39 +295,35 @@ def _compact_history(answers: list[dict]) -> list[dict]:
 
 
 def build_first_question() -> str:
-    return """Bonjour, je suis Credo. Reponds en UN SEUL message a ces questions :
+    return """Bonjour, je suis Credo. Pour evaluer ta solvabilite, pose-toi et reponds en UN SEUL message a toutes les questions que tu juges pertinentes parmi :
 
-1. Quelle est ton activite et ton projet ? (secteur, depuis quand, description)
-2. Combien gagnes-tu par mois environ ?
-3. Combien veux-tu emprunter exactement ?
-4. As-tu des garanties ? (terrain, boutique, vehicule, epargne, materiel)
-5. As-tu deja eu un credit auparavant ?
+- Activite : que fais-tu ? depuis quand ? secteur ?
+- Revenu : combien gagnes-tu par mois ?
+- Montant : combien veux-tu emprunter ?
+- Garanties : as-tu des biens (terrain, boutique, vehicule, materiel, epargne) ?
+- Credit : as-tu deja eu un pret ?
+- Documents : quels documents peux-tu fournir ? (piece d'identite, preuve revenus, photo activite, patente, plan affaires)
 
-Reponds aux 5 en un seul message. Ca permet de gagner du temps."""
+Reponds a tout ce que tu peux en un seul message. Si tu ne sais pas pour certaines questions, dis-le. L'objectif est d'aller vite."""
 
 
 def build_next_question(answers: list[dict]) -> str:
-    """Le LLM decide si infos suffisantes (DONE) ou besoin d'une clarification."""
-    if len(answers) >= MAX_EXCHANGES - 1:
-        return "DONE"
-
+    """LLM decide: infos suffisantes (DONE), clarification, ou demande document."""
     context = _compact_history(answers)
     hist = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in context)
 
     prompt = f"""Tu es un conseiller credit. Le client a repondu:
 {hist}
 
-Verifie si tu as TOUS ces champs pour scorer (il faut au moins un revenu, un montant, une activite, une duree):
-- ACTIVITE: ce qu'il fait, secteur
-- MONTANT: combien il veut
-- REVENU: combien il gagne/mois
-- DUREE: depuis quand
-- EPARGNE: s'il epargne
-- CREDIT: s'il a deja eu un credit
-- GARANTIE: s'il a des garanties
+Verifie si tu peux deja evaluer ce profil. Il te faut au moins: activite, revenu, montant, et soit garantie soit epargne.
 
-Si TOUS les champs sont couverts (meme partiellement), reponds uniquement: DONE
-Sinon, pose UNE question pour le champ le plus critique qui manque. Max 15 mots. En "tu", naturel."""
+Si les infos essentielles sont la (meme partielles), reponds: DONE
+Sinon:
+- S'il manque une info critique (revenu, montant, activite), pose UNE question. Max 15 mots.
+- Si tout est la mais les documents ne sont pas clairs, demande QUELS documents il peut fournir.
+- Si le client a donne des infos contradictoires ou trop vagues, clarifie UN point.
+
+En "tu", naturel. Une seule phrase."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
