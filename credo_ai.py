@@ -211,12 +211,12 @@ def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral
 
     partners, products, rules = _get_partners(realistic_max, sector_hint)
     partners_str = "\n".join(
-        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}"
+        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs: {', '.join(p['docs'])}."
         for p in partners
     ) if partners else "Aucun partenaire dans la base pour ce montant secteur. Base-toi sur les microfinances generalistes UEMOA (FUCEC, WAGES, Cofina, BAOBAB)."
 
     products_str = "\n".join(
-        f"- {pr['product']} ({pr['partner']}): {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%"
+        f"- {pr['product']} ({pr['partner']}): {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'])}."
         for pr in products[:8]
     ) if products else ""
 
@@ -311,22 +311,39 @@ def build_questionnaire(project_desc: str) -> list[str]:
     partners, products, rules = _get_partners(amount_hint, sector_hint)
 
     partners_ctx = "\n".join(
-        f"- {p['name']}: {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}"
-        for p in partners[:6]
+        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs requis: {', '.join(p['docs'])}."
+        for p in partners[:8]
     ) if partners else "Aucun partenaire trouve."
 
+    products_ctx = "\n".join(
+        f"- {pr['partner']} > {pr['product']}: {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'])}."
+        for pr in products[:8]
+    ) if products else ""
+
+    rules_ctx = "\n".join(
+        f"  [{r['category']}] {r['title']}: {r['content']}"
+        for r in rules[:8]
+    ) if rules else ""
+
     prompt = f"""Le client a decrit son projet: "{project_desc}"
-Partenaires disponibles dans la base pour ce type de projet:
+
+--- PARTENAIRES DISPONIBLES (avec conditions) ---
 {partners_ctx}
 
-Genere une liste de questions personnalisees pour evaluer sa solvabilite. Les questions doivent tenir compte des partenaires reels disponibles.
+--- PRODUITS DE CREDIT (avec conditions) ---
+{products_ctx}
 
-Couvre: activite, revenu, montant, duree, garanties, credit, documents.
+--- REGLES METIER ---
+{rules_ctx}
+
+Genere un questionnaire personnalise pour evaluer si ce profil correspond aux conditions des partenaires ci-dessus.
+
+Chaque question doit verifier UN critere precis demande par un des partenaires (montant, duree, garantie, documents requis, secteur, historique credit, revenu).
 
 Retourne UNIQUEMENT un tableau JSON de questions, ex:
 ["Question 1 ?", "Question 2 ?", "Question 3 ?"]
 
-Questions en francais, "tu". Autant de questions que necessaire — ni plus, ni moins."""
+Questions en francais, "tu". Autant que necessaire pour verifier toutes les conditions partenaires pertinentes."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
