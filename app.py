@@ -8,7 +8,8 @@ from flask import Flask, render_template, request, jsonify, session, send_from_d
 
 from credo_ai import (
     score_from_answers,
-    build_chat_prompt,
+    build_first_question,
+    build_next_question,
     extract_document_fields,
     generate_code,
 )
@@ -70,6 +71,9 @@ def init_db():
             analysis TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );
+        -- Purge anciennes donnees de test (fallback)
+        DELETE FROM results WHERE score > 600;
+        DELETE FROM sessions WHERE status = 'completed';
     """)
     conn.commit()
     conn.close()
@@ -117,8 +121,10 @@ def start_session():
     conn.commit()
     conn.close()
 
-    # Premiere question
-    first_q = build_chat_prompt([])
+    try:
+        first_q = build_first_question()
+    except Exception as e:
+        return jsonify({"error": f"Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
 
     conn = get_db()
     conn.execute(
@@ -174,7 +180,12 @@ def chat_message(session_id):
         return jsonify({"done": True})
 
     # Prochaine question via IA
-    next_q = build_chat_prompt(answers)
+    try:
+        next_q = build_next_question(answers)
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": "Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
+
     conn.execute(
         "INSERT INTO messages (session_id, role, question) VALUES (?, 'ia', ?)",
         (session_id, next_q),
@@ -204,7 +215,11 @@ def analyze(session_id):
     answers = [{"q": m["question"], "a": m["answer"]} for m in messages]
 
     # Scoring via IA
-    result = score_from_answers(answers)
+    try:
+        result = score_from_answers(answers)
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": "Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
 
     # Genere code de referral si plan complet
     code = None
