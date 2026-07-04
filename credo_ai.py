@@ -110,10 +110,21 @@ def _estimate_monthly_revenue(answers: list[dict]) -> int:
             nums = _extract_numbers(r)
             if nums:
                 return nums[0]
-        if "gagne" in r or "salaire" in r or "revenu" in r:
+        if "gagne" in r or "salaire" in r:
             nums = _extract_numbers(r)
             if nums:
                 return nums[0]
+        if "revenu" in r:
+            # Only extract numbers from the sentence containing "revenu"
+            for sentence in r.replace("?", ".").replace("!", ".").split("."):
+                if "revenu" in sentence:
+                    # Check for negation
+                    if any(w in sentence for w in ["aucun", "pas de", "sans", "zero", "0"]):
+                        return 0
+                    nums = _extract_numbers(sentence)
+                    if nums:
+                        return nums[0]
+                    return 0
     return 0
 
 
