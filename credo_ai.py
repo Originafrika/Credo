@@ -463,14 +463,9 @@ Exemple:
     except Exception as e:
         _log(f"build_questionnaire_blocks LLM call failed: {e}")
 
-    # Fallback: flat list
-    try:
-        flat = build_questionnaire(project_desc)
-        if flat:
-            return {"blocks": [flat[i:i+3] for i in range(0, len(flat), 3)]}
-    except Exception as e:
-        _log(f"build_questionnaire_blocks fallback failed: {e}")
-    return {"blocks": [["Quelle est ton activite ?", "Combien gagnes-tu par mois ?"], ["Combien veux-tu emprunter ?", "Depuis combien de temps ?", "As-tu des garanties ?"]]}
+    # Fallback: flat list from same LLM approach
+    flat = build_questionnaire(project_desc)
+    return {"blocks": [flat[i:i+3] for i in range(0, len(flat), 3)]}
 
 
 def build_next_question(answers: list[dict]) -> str:
