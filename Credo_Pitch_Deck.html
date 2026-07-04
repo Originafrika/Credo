@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Credo · Pitch Deck</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+</style>
+<style>
+:root{--bg:#ffffff;--fg:#0d1130;--muted:#4a5070;--accent:#312e81;--accent2:#4338ca;--accent3:#6366f1;--grad:linear-gradient(135deg,#1e1b4b,#312e81 55%,#4338ca)}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#fff;color:var(--fg);font-family:'Inter',sans-serif;font-weight:400;line-height:1.5;-webkit-font-smoothing:antialiased}
+.slide{width:100vw;height:100vh;display:flex;flex-direction:column;justify-content:center;padding:10vh 12vw;position:relative;overflow:hidden;page-break-after:always;break-inside:avoid}
+.h1{font-size:clamp(36px,5.5vw,86px);font-weight:900;line-height:1.05;letter-spacing:-.03em;margin:0 0 .5em}
+.h2{font-size:clamp(28px,4vw,62px);font-weight:800;line-height:1.1;letter-spacing:-.025em;margin:0 0 .4em}
+.lede{font-size:clamp(16px,1.6vw,24px);line-height:1.5;color:var(--muted);max-width:65ch;font-weight:400}
+.dim{color:var(--muted);font-size:clamp(13px,1.1vw,16px);line-height:1.5}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+.kicker{font-size:clamp(11px,.9vw,14px);font-weight:600;color:var(--accent);letter-spacing:.12em;text-transform:uppercase;margin:0 0 1em}
+.row{display:flex;gap:1em;flex-wrap:wrap;margin-top:1.5em}
+.pill{display:inline-block;padding:.3em 1em;border-radius:999px;font-size:clamp(11px,.9vw,14px);font-weight:500;background:rgba(49,46,129,.08);color:var(--accent);border:1px solid rgba(49,46,129,.15)}
+.card{border-radius:16px;padding:1.5em;border:1px solid rgba(20,25,60,.08);background:var(--bg)}
+.card h4{font-size:clamp(14px,1.2vw,18px);font-weight:700;margin:0 0 .4em}
+.card p{margin:0;font-size:clamp(12px,1vw,15px);line-height:1.5;color:var(--muted)}
+.grid{display:grid;gap:1.2em;margin-top:1.5em}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.blob{position:absolute;right:-10vw;top:-10vw;width:40vw;height:40vw;border-radius:50%;background:var(--grad);filter:blur(6vw);opacity:.12;pointer-events:none}
+.soft-bg{position:absolute;inset:0;background:linear-gradient(135deg,#eef1ff,#f4edff 55%,#fbedff);z-index:-1}
+.section-num{position:absolute;right:4vw;bottom:3vh;font-size:clamp(80px,12vw,200px);font-weight:900;line-height:.9;color:rgba(20,25,60,.03);pointer-events:none;letter-spacing:-.04em}
+.ask-box{background:var(--grad);color:#fff;border-radius:24px;padding:2.5em 3em;margin-top:1.5em}
+.ask-box .dim{color:rgba(255,255,255,.75)}
+.ask-box h2{color:#fff}
+.metric{text-align:center}
+.metric .n{font-size:clamp(32px,4vw,64px);font-weight:900;letter-spacing:-.03em;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1}
+.metric .l{color:var(--muted);font-size:clamp(12px,1vw,15px);margin-top:.3em}
+.center{display:flex;align-items:center;justify-content:center;text-align:center}
+.mt{margin-top:1.5em}
+.mt2{margin-top:2.5em}
+.tag{font-size:clamp(11px,.9vw,14px);font-weight:700;color:var(--accent);letter-spacing:.12em;margin:0 0 .3em}
+@media print{@page{size:A4 portrait;margin:0}body{background:#fff}.slide{height:100vh;width:100vw;padding:8vh 10vw}.blob{filter:blur(40px);opacity:.1}}
+</style></head>
+<body>
+
+<!-- 1 -->
+<section class="slide">
+<div class="soft-bg"></div>
+<div class="blob"></div>
+<p class="kicker">Innov'Action 2026 | Lome, Togo</p>
+<h1 class="h1">AI Credit Broker for<br><span class="grad">Financial Inclusion</span>.</h1>
+<p class="lede">Know your solvability in 5 minutes. No payslip, no bank account, no displacement. Built for the 80% of Togo's informal economy.</p>
+<div class="row">
+<span class="pill">Origin SARL</span>
+<span class="pill">Pre-Seed</span>
+</div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+<span class="section-num">01</span>
+<p class="tag">PROBLEM</p>
+<h2 class="h2">80% of Togo's economy is informal. 8M adults are invisible to credit.</h2>
+<p class="lede">Banks and MFIs reject them not because they're insolvent  -  but because evaluating informal profiles is manual, expensive, and inconsistent.</p>
+<div class="grid g3">
+<div class="card"><h4>No payslip</h4><p>No bank statement. No credit history. Rejected by design.</p></div>
+<div class="card"><h4>Days wasted</h4><p>Queueing at multiple agencies to be turned away.</p></div>
+<div class="card"><h4>10.9% NPL</h4><p>MFIs lack standardized scoring. Bad loans stack up.</p></div>
+</div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+<span class="section-num">02</span>
+<p class="tag">IMPACT</p>
+<h2 class="h2">Three consequences of credit exclusion.</h2>
+<div class="grid g3">
+<div class="card"><h4>Borrower</h4><p>No way to know eligibility before visiting. Humiliation, wasted time, lost opportunity.</p></div>
+<div class="card"><h4>MFI</h4><p>Resources wasted screening unqualified applicants. Cannot assess informal income.</p></div>
+<div class="card"><h4>Economy</h4><p>Informal sector disconnected from formal finance. Growth capped for 80% of workers.</p></div>
+</div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+<span class="section-num">03</span>
+<p class="tag">SOLUTION</p>
+<h2 class="h2">Credo indexes what makes a borrower creditworthy.</h2>
+<p class="lede">User pays via Mobile Money, answers adaptive questions, uploads optional documents. AI analyses profile against partner MFI criteria  -  returns score, max amount, recommended institution.</p>
+<div class="row">
+<span class="pill">Mobile Money</span>
+<span class="pill">AI Chat</span>
+<span class="pill">RAG Engine</span>
+<span class="pill">Smart Matching</span>
+<span class="pill">Zero Displacement</span>
+</div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+<span class="section-num">04</span>
+<p class="tag">MARKET</p>
+<h2 class="h2">Togo  -  our home. First market.</h2>
+<div class="grid g3">
+<div class="card"><h4>8M+ adults</h4><p>Most without formal credit. 80%+ smartphone penetration.</p></div>
+<div class="card"><h4>70+ MFIs</h4><p>FUCEC-Togo alone has 1.4M members. All need digital scoring.</p></div>
+<div class="card"><h4>100% Mobile Money</h4><p>Flooz, Moov, TMoney. No card, no bank account required.</p></div>
+</div>
+<p class="dim mt">Model replicable across all 8 WAEMU countries.</p>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+<span class="section-num">05</span>
+<p class="tag">PRODUCT & TRACTION</p>
+<h2 class="h2">MVP live. Architecture built. Ready for partners.</h2>
+<div class="grid g2">
+<div class="card"><h4>MVP in production</h4><p>credo.originafrika.online  -  deployed on Vercel.</p></div>
+<div class="card"><h4>Mobile Money integrated</h4><p>Flooz, Moov, TMoney. Pay-per-use, no subscription.</p></div>
+<div class="card"><h4>RAG architecture ready</h4><p>Engine ingests lending criteria of any MFI partner.</p></div>
+<div class="card"><h4>Origin SARL incorporated</h4><p>Legal entity since September 2025.</p></div>
+</div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+<span class="section-num">06</span>
+<p class="tag">BUSINESS MODEL</p>
+<h2 class="h2">Simple. Fair. No surprise fees.</h2>
+<div class="grid g3">
+<div class="card"><h4>Borrower</h4><p>2,500-5,000 FCFA per report. One-time Mobile Money payment.</p></div>
+<div class="card"><h4>MFI Partner</h4><p>Commission on funded loans. Pre-validated leads reduce cost.</p></div>
+<div class="card"><h4>Premium (future)</h4><p>Monitoring, advice, follow-up. Optional subscription.</p></div>
+</div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+<span class="section-num">07</span>
+<p class="tag">INFRASTRUCTURE</p>
+<h2 class="h2">Tech is ready. Investment builds the network.</h2>
+<div class="grid g3">
+<div class="card"><h4>RAG Engine</h4><p>Ingest any MFI's lending criteria. Multi-institution matching.</p></div>
+<div class="card"><h4>Mobile Money APIs</h4><p>Flooz, Moov, TMoney  -  institutional support to scale.</p></div>
+<div class="card"><h4>Partner Onboarding</h4><p>Agents to onboard MFIs. Train staff. Digitize criteria.</p></div>
+</div>
+<p class="dim mt">Target: 3 MFI partners signed within incubation.</p>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+<span class="section-num">08</span>
+<p class="tag">TEAM</p>
+<h2 class="h2">Young. Hungry. Complementary.</h2>
+<div class="grid g3">
+<div class="card"><h4>David Fesal Peteou</h4><p>21. AI & Blockchain, Collège de Paris. App architect, full-stack. Lead dev, Credo.</p></div>
+<div class="card"><h4>Manassé Peteou</h4><p>18. Scientific baccalaureate. Self-taught developer. Equivalent 3 years experience.</p></div>
+<div class="card"><h4>Gloria C.S. Yededji</h4><p>21, Ivorian. Bachelor in Banking & Finance. Financial analyst.</p></div>
+</div>
+<p class="dim mt">Built for this market. Not for Silicon Valley.</p>
+</section>
+
+<!-- 10 -->
+<section class="slide center">
+<div class="soft-bg"></div>
+<div>
+<p class="tag">VISION</p>
+<h1 class="h1" style="max-width:18ch;margin:0 auto">Make credit accessible to every<br><span class="grad">informal worker</span> in West Africa.</h1>
+<div class="ask-box" style="max-width:48em;margin:2em auto 0;text-align:left">
+<p style="font-size:clamp(11px,.8vw,13px);font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.6);margin:0 0 1em">REQUEST</p>
+<div style="display:flex;gap:3em;flex-wrap:wrap">
+<div><div style="font-size:clamp(28px,3vw,44px);font-weight:900">6 months</div><div class="dim">Innov'Action incubation</div></div>
+<div><div style="font-size:clamp(28px,3vw,44px);font-weight:900">Grant</div><div class="dim">Start Fund micro-grant</div></div>
+<div><div style="font-size:clamp(28px,3vw,44px);font-weight:900">3 MFIs</div><div class="dim">Partnerships targeted</div></div>
+</div>
+</div>
+<p class="dim mt2" style="font-style:italic">"We don't replace banks. We make the invisible borrower visible."</p>
+</div>
+</section>
+
+</body></html>
