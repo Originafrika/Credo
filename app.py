@@ -66,6 +66,7 @@ def init_db():
             missing_docs TEXT,
             tips TEXT,
             code TEXT UNIQUE,
+            loan_amount INTEGER,
             created_at TEXT DEFAULT (datetime('now'))
         );
     """)
@@ -304,10 +305,12 @@ def upload_document(session_id):
 
 @app.route("/verify/<code>")
 def verify_code(code):
-    """Endpoint partenaire pour verifier un code de referral"""
+    """Page partenaire pour verifier un code"""
     conn = get_db()
     result = conn.execute(
-        """SELECT r.score, r.max_amount, r.risk, r.code, r.partners, s.phone
+        """SELECT r.score, r.max_amount, r.risk, r.code, r.partners,
+                  r.missing_docs, r.tips, r.created_at,
+                  s.phone, s.status as session_status
         FROM results r JOIN sessions s ON r.session_id = s.id
         WHERE r.code = ?""",
         (code,),
@@ -315,17 +318,51 @@ def verify_code(code):
     conn.close()
 
     if not result:
-        return jsonify({"valid": False, "error": "Code invalide"}), 404
+        return render_template("verify.html", code=code, valid=False)
 
-    return jsonify({
-        "valid": True,
-        "score": result["score"],
-        "max_amount": result["max_amount"],
-        "risk": result["risk"],
-        "code": result["code"],
-        "partners": json.loads(result["partners"]),
-        "phone": result["phone"][:3] + "XX" + result["phone"][-2:],
-    })
+    partners_data = json.loads(result["partners"]) if result["partners"] else []
+    missing_docs = json.loads(result["missing_docs"]) if result["missing_docs"] else []
+    tips_data = json.loads(result["tips"]) if result["tips"] else []
+
+    return render_template("verify.html",
+        code=code, valid=True,
+        score=result["score"],
+        max_amount=result["max_amount"],
+        risk=result["risk"],
+        partners=partners_data,
+        missing_docs=missing_docs,
+        tips=tips_data,
+        phone=result["phone"][:3] + "XX" + result["phone"][-2:],
+        created_at=result["created_at"],
+    )
+
+
+@app.route("/api/verify/<code>/update", methods=["POST"])
+def update_referral(code):
+    """Partenaire confirme le statut (contacte, approuve, funded, rejete)"""
+    data = request.json
+    new_status = data.get("status")
+    loan_amount = data.get("loan_amount")
+
+    valid_statuses = ["contacted", "approved", "funded", "rejected"]
+    if new_status not in valid_statuses:
+        return jsonify({"error": "Statut invalide"}), 400
+
+    conn = get_db()
+    conn.execute(
+        "UPDATE sessions SET status = ?, completed_at = datetime('now') WHERE code = ?",
+        (new_status, code),
+    )
+    if new_status == "funded" and loan_amount:
+        conn.execute(
+            """UPDATE results SET loan_amount = ?
+            WHERE code = ?""",
+            (loan_amount, code),
+        )
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "code": code, "status": new_status})
 
 
 @app.route("/uploads/<filename>")
