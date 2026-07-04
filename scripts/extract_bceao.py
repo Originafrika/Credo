@@ -12,7 +12,9 @@ import os
 import re
 import sys
 import urllib.request
+import uuid
 from dataclasses import dataclass, field, asdict
+from datetime import datetime
 from typing import Optional
 
 try:
@@ -58,6 +60,14 @@ class ExtractedData:
     period: str = "2025-S1"
     extracted_at: str = ""
     banks: list = field(default_factory=list)
+
+    def to_dict(self):
+        return {
+            "source": self.source,
+            "period": self.period,
+            "extracted_at": self.extracted_at,
+            "banks": [asdict(b) for b in self.banks],
+        }
 
 
 def download_pdf(url: str, path: str) -> str:
@@ -231,19 +241,22 @@ def main():
     entries = parse_pdf(pdf_path)
     print(f"  {len(entries)} entrees bancaires extraites")
 
+    # Nettoie les entrees suspectes (base_rate < 3.0 = probablement pas un taux)
+    entries = [e for e in entries if (e.base_rate or 100) >= 3.0]
+    print(f"  {len(entries)} apres filtrage (base_rate >= 3%)")
+
     lenders = entries_to_lenders(entries)
     print(f"  {len(lenders)} preteurs uniques generes")
 
-    # Sauvegarde JSON
-    data = ExtractedData(extracted_at=__import__("datetime").datetime.now().isoformat())
-    data.banks = [asdict(e) for e in entries]
+    data = ExtractedData(extracted_at=datetime.now().isoformat())
+    data.banks = entries
 
     output_dir = args.output or os.path.dirname(os.path.abspath(__file__))
     os.makedirs(output_dir, exist_ok=True)
 
     json_path = os.path.join(output_dir, "bceao_extract.json")
     with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        json.dump(data.to_dict(), f, ensure_ascii=False, indent=2, default=str)
     print(f"  JSON: {json_path}")
 
     sql = generate_seed_sql(lenders)

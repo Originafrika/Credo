@@ -13,9 +13,32 @@ SCORE_MODEL = "llama-3.3-70b-versatile"
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 # ==============================================================
-# DONNEES REELLES PARTENAIRES UEMOA
+# DONNEES BANCAIRES BCEAO (extraction automatique)
 # ==============================================================
-REAL_LENDERS = [
+_BCEAO_DATA = None
+
+def _load_bceao_data():
+    global _BCEAO_DATA
+    if _BCEAO_DATA is not None:
+        return
+    path = os.path.join(os.path.dirname(__file__), "scripts", "bceao_extract.json")
+    if not os.path.exists(path):
+        print("[CREDO] BCEAO data not found, using defaults")
+        _BCEAO_DATA = {"banks": []}
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            _BCEAO_DATA = json.load(f)
+        print(f"[CREDO] BCEAO data loaded: {len(_BCEAO_DATA.get('banks', []))} banks")
+    except Exception as e:
+        print(f"[CREDO] BCEAO load error: {e}")
+        _BCEAO_DATA = {"banks": []}
+
+
+# ==============================================================
+# DONNEES MFI + FINTECH (non couvertes par BCEAO)
+# ==============================================================
+MFI_LENDERS = [
     {
         "name": "FUCEC-Togo",
         "slug": "fucec-togo",
@@ -77,21 +100,6 @@ REAL_LENDERS = [
         "desc": "Credit mobile MoMo, accessible 7j/7",
     },
     {
-        "name": "Ecobank Togo",
-        "slug": "ecobank",
-        "type": "banque",
-        "min_loan": 500000,
-        "max_loan": 50000000,
-        "min_score": 600,
-        "max_rate": "6-10%",
-        "sectors": ["commerce", "service", "agriculture", "industrie"],
-        "requires_collateral": True,
-        "requires_savings": True,
-        "group_lending": False,
-        "documents": ["piece_identite", "patente", "plan_affaires", "garantie"],
-        "desc": "Banque panafricaine, taux competitifs pour PME formelles",
-    },
-    {
         "name": "Cofina Togo",
         "slug": "cofina",
         "type": "microfinance",
@@ -124,6 +132,39 @@ REAL_LENDERS = [
 ]
 
 
+def _get_all_lenders(country: str = "TG") -> list:
+    """Combine BCEAO banks + MFI/fintech lenders.
+    Pour v1: priorite TG, puis tous pays si pas trouve."""
+    _load_bceao_data()
+    result = []
+
+    # Banques BCEAO (filtre par pays)
+    for b in _BCEAO_DATA.get("banks", []):
+        if b.get("country") in (country, None):
+            result.append({
+                "name": b["name"].title(),
+                "slug": b["name"].lower().replace(" ", "-").replace(",", "").replace("–", "-")[:40],
+                "type": "banque",
+                "min_loan": 100000,
+                "max_loan": 50000000,
+                "min_score": 500,
+                "max_rate": f"{b['max_rate']}%",
+                "sectors": ["commerce", "service", "agriculture", "industrie"],
+                "requires_collateral": True,
+                "requires_savings": False,
+                "group_lending": False,
+                "documents": ["piece_identite", "patente", "plan_affaires", "garantie"],
+                "desc": f"Banque agreee BCEAO. Taux debiteur max: {b['max_rate']}%, Taux de base: {b['base_rate']}%",
+                "base_rate": b["base_rate"],
+                "max_rate_pct": b["max_rate"],
+            })
+
+    # MFI + Fintech
+    result.extend(MFI_LENDERS)
+
+    return result
+
+
 def log_groq_error(context: str, error: any):
     print(f"[CREDO GROQ ERROR] {context}: {error}")
 
@@ -134,24 +175,22 @@ def generate_code() -> str:
     return f"CREDO-{suffix}"
 
 
-def match_lenders(description: str, monthly_revenue: int = 0, amount_wanted: int = 0) -> list:
+def match_lenders(description: str, monthly_revenue: int = 0, amount_wanted: int = 0, country: str = "TG") -> list:
     """Trouve les partenaires pertinents selon le profil"""
+    all_lenders = _get_all_lenders(country)
     desc_lower = description.lower()
     matches = []
-    for l in REAL_LENDERS:
+    for l in all_lenders:
         score = 0
-        # Matching secteur
-        for s in l["sectors"]:
+        for s in l.get("sectors", ["commerce"]):
             if s in desc_lower:
                 score += 2
-        # Matching montant
         if amount_wanted > 0:
             if l["min_loan"] <= amount_wanted <= l["max_loan"]:
                 score += 3
             elif amount_wanted < l["min_loan"]:
                 score -= 1
-        # Matching revenu (approximatif)
-        if monthly_revenue > 0 and l["min_score"] > 200:
+        if monthly_revenue > 0 and l.get("min_score", 300) > 200:
             if monthly_revenue >= l["min_loan"] * 0.3:
                 score += 1
         if score > 0:
@@ -223,7 +262,8 @@ def score_from_answers(answers: list[dict]) -> dict:
 
     lenders = match_lenders(description, revenue, amount_wanted)
     if not lenders:
-        lenders = REAL_LENDERS[:3]
+        all_l = _get_all_lenders()
+        lenders = all_l[:3]
 
     prompt = build_scoring_prompt(answers, lenders)
 
