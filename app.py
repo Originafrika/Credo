@@ -11,6 +11,7 @@ from credo_ai import (
     score_from_answers,
     build_first_question,
     build_questionnaire,
+    build_questionnaire_blocks,
     build_next_question,
     extract_document_fields,
     generate_code,
@@ -126,17 +127,19 @@ def chat_message(session_id):
 
     user_count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
 
-    # First answer → generate questionnaire, return for progressive blocks
+    # First answer → generate questionnaire with LLM-decided blocks, return for progressive blocks
     if user_count and user_count["c"] == 1:
         try:
-            questions = build_questionnaire(answer)
+            result = build_questionnaire_blocks(answer)
+            blocks = result["blocks"]
+            questions = [q for block in blocks for q in block]
         except Exception:
             db_close(conn)
             return jsonify({"error": "Credo IA indisponible."}), 503
         if questions:
             db_execute(conn, "UPDATE sessions SET questionnaire = %s, question_idx = 0 WHERE id = %s", (json.dumps(questions), session_id))
             db_close(conn)
-            return jsonify({"type": "questionnaire", "questions": questions, "done": False})
+            return jsonify({"type": "questionnaire", "blocks": blocks, "questions": questions, "done": False})
         db_close(conn)
         return jsonify({"done": True})
 

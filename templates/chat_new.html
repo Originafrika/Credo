@@ -669,21 +669,25 @@
             document.getElementById('q-bar').style.width = `${(Math.min(idx, t) / t) * 100}%`;
         }
 
-        const BLOCK_SIZE = 3;
+        let allBlocks = [];
         let allQuestions = [];
         let allAnswers = [];
         let currentBlock = 0;
 
         function renderBlock() {
-            const start = currentBlock * BLOCK_SIZE;
-            const end = Math.min(start + BLOCK_SIZE, allQuestions.length);
-            const blockQ = allQuestions.slice(start, end);
-            const isLast = end >= allQuestions.length;
+            const blockQ = allBlocks[currentBlock] || [];
+            const isLast = currentBlock >= allBlocks.length - 1;
+
+            // Compute global idx offset
+            let globalStart = 0;
+            for (let b = 0; b < currentBlock; b++) {
+                globalStart += allBlocks[b].length;
+            }
 
             const area = document.getElementById('input-area');
             let html = '<div class="q-grid">';
             blockQ.forEach((q, i) => {
-                const idx = start + i;
+                const idx = globalStart + i;
                 const val = allAnswers[idx] || '';
                 html += `<div class="q-item"><label for="q-${idx}">${q}</label><input type="text" id="q-${idx}" value="${val.replace(/"/g,'&quot;')}" placeholder="Ta réponse..."></div>`;
             });
@@ -693,18 +697,21 @@
                 html += `<button onclick="nextBlock()" class="btn btn-primary" style="margin-top:0.75rem">Suivant</button>`;
             }
             area.innerHTML = html;
-            updateProgress(end, allQuestions.length);
-            // Focus first input
+            updateProgress(globalStart + blockQ.length, allQuestions.length);
             const first = document.querySelector('.q-item input');
             if (first) first.focus();
         }
 
         function saveBlock() {
-            const start = currentBlock * BLOCK_SIZE;
-            const end = Math.min(start + BLOCK_SIZE, allQuestions.length);
-            for (let i = start; i < end; i++) {
-                const inp = document.getElementById(`q-${i}`);
-                if (inp) allAnswers[i] = inp.value;
+            let globalStart = 0;
+            for (let b = 0; b < currentBlock; b++) {
+                globalStart += allBlocks[b].length;
+            }
+            const blockQ = allBlocks[currentBlock] || [];
+            for (let i = 0; i < blockQ.length; i++) {
+                const idx = globalStart + i;
+                const inp = document.getElementById(`q-${idx}`);
+                if (inp) allAnswers[idx] = inp.value;
             }
         }
 
@@ -781,7 +788,8 @@
                 }
                 if (data.type === 'questionnaire') {
                     addMsg('Credo IA', 'Merci. Réponds à ces questions par blocs :');
-                    allQuestions = data.questions;
+                    allBlocks = data.blocks || [];
+                    allQuestions = data.questions || [];
                     allAnswers = new Array(allQuestions.length).fill('');
                     currentBlock = 0;
                     renderBlock();

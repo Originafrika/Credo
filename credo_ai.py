@@ -347,14 +347,22 @@ def build_questionnaire(project_desc: str) -> list[str]:
 --- REGLES METIER ---
 {rules_ctx}
 
-Genere un questionnaire personnalise pour evaluer si ce profil correspond aux conditions des partenaires ci-dessus.
+Genere un questionnaire personnalise en BLOCS de questions.
 
-Chaque question doit verifier UN critere precis demande par un des partenaires (montant, duree, garantie, documents requis, secteur, historique credit, revenu).
+Chaque bloc porte sur UN theme (ex: informations personnelles, finance, documents, garanties).
+Regroupe les questions par theme : chaque bloc = 2 a 4 questions liees entre elles.
 
-Retourne UNIQUEMENT un tableau JSON de questions, ex:
-["Question 1 ?", "Question 2 ?", "Question 3 ?"]
+Exemple:
+{{
+  "blocks": [
+    ["Question 1 ?", "Question 2 ?", "Question 3 ?"],
+    ["Question 4 ?", "Question 5 ?"],
+    ["Question 6 ?", "Question 7 ?", "Question 8 ?"]
+  ]
+}}
 
-Questions en francais, "tu". 5 a 8 questions maximum. Chaque question courte (< 15 mots)."""
+Chaque question verifie UN critere precis des partenaires (montant, duree, garantie, documents, secteur, historique, revenu).
+Questions en francais, "tu". 5 a 8 questions total. Chaque question < 15 mots."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
@@ -364,6 +372,13 @@ Questions en francais, "tu". 5 a 8 questions maximum. Chaque question courte (< 
         max_tokens=500,
     )
     data = json.loads(resp.choices[0].message.content)
+    # Expect {"blocks": [["Q1","Q2"], ["Q3","Q4","Q5"], ...]}
+    if isinstance(data, dict):
+        blocks = data.get("blocks") or data.get("questions") or data.get("blocs") or None
+        if blocks and isinstance(blocks, list):
+            flat = [q for block in blocks for q in block]
+            if flat:
+                return flat  # return flat, blocks returned separately
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -371,6 +386,73 @@ Questions en francais, "tu". 5 a 8 questions maximum. Chaque question courte (< 
             if isinstance(v, list):
                 return v
     return ["Quelle est ton activite ?", "Combien gagnes-tu par mois ?", "Combien veux-tu emprunter ?", "Depuis combien de temps ?", "As-tu des garanties ?", "As-tu deja eu un credit ?", "Quels documents peux-tu fournir ?"]
+
+
+def build_questionnaire_blocks(project_desc: str) -> dict:
+    """Retourne {blocks: [[q1,q2],[q3,q4,q5],...]} pour le frontend progressif."""
+    nums = _extract_numbers(project_desc)
+    amount_hint = max(nums) if nums else 500000
+    sector_hint = ""
+    for w in ["commerce", "agriculture", "service", "artisanat", "tech", "ia", "numerique"]:
+        if w in project_desc.lower():
+            sector_hint = w
+            break
+    partners, products, rules = _get_partners(amount_hint, sector_hint)
+
+    partners_ctx = "\n".join(
+        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs requis: {', '.join(p['docs'])}."
+        for p in partners[:8]
+    ) if partners else "Aucun partenaire trouve."
+
+    products_ctx = "\n".join(
+        f"- {pr['partner']} > {pr['product']}: {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'])}."
+        for pr in products[:8]
+    ) if products else ""
+
+    rules_ctx = "\n".join(
+        f"  [{r['category']}] {r['title']}: {r['content']}"
+        for r in rules[:8]
+    ) if rules else ""
+
+    prompt = f"""Le client a decrit son projet: "{project_desc}"
+
+--- PARTENAIRES DISPONIBLES ---
+{partners_ctx}
+
+--- PRODUITS DE CREDIT ---
+{products_ctx}
+
+--- REGLES METIER ---
+{rules_ctx}
+
+Genere un questionnaire en BLOCS. Chaque bloc = 2 a 4 questions sur UN theme.
+Exemple:
+{{
+  "blocks": [
+    ["Question 1 ?", "Question 2 ?"],
+    ["Question 3 ?", "Question 4 ?", "Question 5 ?"],
+    ["Question 6 ?"]
+  ]
+}}
+
+5 a 8 questions total. Questions en francais, "tu", < 15 mots chacune."""
+
+    resp = client.chat.completions.create(
+        model=SCORE_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.7,
+        max_tokens=500,
+    )
+    data = json.loads(resp.choices[0].message.content)
+    blocks = None
+    if isinstance(data, dict):
+        blocks = data.get("blocks") or data.get("questions") or data.get("blocs") or None
+    if blocks and isinstance(blocks, list) and len(blocks) > 0 and isinstance(blocks[0], list):
+        return {"blocks": blocks}
+    # Fallback: flat list with BLOCK_SIZE=3
+    flat = build_questionnaire(project_desc)
+    return {"blocks": [flat[i:i+3] for i in range(0, len(flat), 3)]}
 
 
 def build_next_question(answers: list[dict]) -> str:
