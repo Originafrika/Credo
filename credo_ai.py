@@ -295,16 +295,16 @@ def _compact_history(answers: list[dict]) -> list[dict]:
 
 
 def build_first_question() -> str:
-    return """Bonjour, je suis Credo. Pour evaluer ta solvabilite, pose-toi et reponds en UN SEUL message a toutes les questions que tu juges pertinentes parmi :
+    return """Bonjour, je suis Credo. Pour evaluer ta solvabilite, reponds en UN SEUL message a TOUTES les questions suivantes :
 
-- Activite : que fais-tu ? depuis quand ? secteur ?
-- Revenu : combien gagnes-tu par mois ?
-- Montant : combien veux-tu emprunter ?
-- Garanties : as-tu des biens (terrain, boutique, vehicule, materiel, epargne) ?
-- Credit : as-tu deja eu un pret ?
-- Documents : quels documents peux-tu fournir ? (piece d'identite, preuve revenus, photo activite, patente, plan affaires)
+1. Quelle est ton activite principale ? Depuis combien de temps ?
+2. Combien gagnes-tu par mois environ ?
+3. Combien veux-tu emprunter exactement ?
+4. Quelles garanties peux-tu offrir ? (terrain, boutique, vehicule, materiel, epargne)
+5. As-tu deja eu un credit ? Si oui, rembourse ?
+6. Quels documents peux-tu fournir ? (piece d'identite, preuve revenus, photo activite, patente)
 
-Reponds a tout ce que tu peux en un seul message. Si tu ne sais pas pour certaines questions, dis-le. L'objectif est d'aller vite."""
+Reponds aux 6 questions en un seul message. Si tu n'as pas d'info pour une question, ecris "rien". C'est important d'avoir tout."""
 
 
 def build_next_question(answers: list[dict]) -> str:
