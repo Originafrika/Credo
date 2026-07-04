@@ -67,6 +67,12 @@ def init_db():
         db_execute(conn, "DELETE FROM sessions WHERE status = 'completed'")
     except Exception:
         pass
+    # Migrate: ensure questionnaire + question_idx exist (for tables created before these columns were added)
+    try:
+        db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS questionnaire TEXT")
+        db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS question_idx INTEGER DEFAULT 0")
+    except Exception:
+        pass
     db_close(conn)
 
 init_db()
@@ -133,15 +139,15 @@ def chat_message(session_id):
             result = build_questionnaire_blocks(answer)
             blocks = result["blocks"]
             questions = [q for block in blocks for q in block]
+            if questions:
+                db_execute(conn, "UPDATE sessions SET questionnaire = %s, question_idx = 0 WHERE id = %s", (json.dumps(questions), session_id))
+                db_close(conn)
+                return jsonify({"type": "questionnaire", "blocks": blocks, "questions": questions, "done": False})
+            db_close(conn)
+            return jsonify({"done": True})
         except Exception:
             db_close(conn)
             return jsonify({"error": "Credo IA indisponible."}), 503
-        if questions:
-            db_execute(conn, "UPDATE sessions SET questionnaire = %s, question_idx = 0 WHERE id = %s", (json.dumps(questions), session_id))
-            db_close(conn)
-            return jsonify({"type": "questionnaire", "blocks": blocks, "questions": questions, "done": False})
-        db_close(conn)
-        return jsonify({"done": True})
 
     # Normal single-question flow (after questionnaire or standalone)
     msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
