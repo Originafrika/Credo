@@ -396,6 +396,14 @@ Questions en francais, "tu". 5 a 8 questions total. Chaque question < 15 mots.""
 
 def build_questionnaire_blocks(project_desc: str) -> dict:
     """Retourne {blocks: [[q1,q2],[q3,q4,q5],...]} pour le frontend progressif."""
+    try:
+        return _build_questionnaire_blocks(project_desc)
+    except Exception as e:
+        _log(f"build_questionnaire_blocks UNEXPECTED: {e}")
+        raise
+
+def _build_questionnaire_blocks(project_desc: str) -> dict:
+    _log("build_questionnaire_blocks: step 1 extract_numbers")
     nums = _extract_numbers(project_desc)
     amount_hint = max(nums) if nums else 500000
     sector_hint = ""
@@ -403,8 +411,11 @@ def build_questionnaire_blocks(project_desc: str) -> dict:
         if w in project_desc.lower():
             sector_hint = w
             break
+    _log(f"build_questionnaire_blocks: step 2 get_partners hint={amount_hint} sector={sector_hint}")
     partners, products, rules = _get_partners(amount_hint, sector_hint)
+    _log(f"build_questionnaire_blocks: got {len(partners)} partners, {len(products)} products, {len(rules)} rules")
 
+    _log("build_questionnaire_blocks: step 3 format context")
     partners_ctx = "\n".join(
         f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs requis: {', '.join(p['docs'] or [])}."
         for p in partners[:8]
@@ -420,33 +431,27 @@ def build_questionnaire_blocks(project_desc: str) -> dict:
         for r in rules[:8]
     ) if rules else ""
 
-    prompt = f"""Le client a decrit son projet: "{project_desc}"
+    _log("build_questionnaire_blocks: step 4 LLM call")
+    prompt_text = f"""Projet: "{project_desc}"
 
---- PARTENAIRES DISPONIBLES ---
+Partenaires:
 {partners_ctx}
 
---- PRODUITS DE CREDIT ---
+Produits:
 {products_ctx}
 
---- REGLES METIER ---
+Regles:
 {rules_ctx}
 
 Genere un questionnaire en BLOCS. Chaque bloc = 2 a 4 questions sur UN theme.
-Exemple:
 {{
-  "blocks": [
-    ["Question 1 ?", "Question 2 ?"],
-    ["Question 3 ?", "Question 4 ?", "Question 5 ?"],
-    ["Question 6 ?"]
-  ]
+  "blocks": [["Q1 ?","Q2 ?"],["Q3 ?","Q4 ?","Q5 ?"]]
 }}
-
-5 a 8 questions total. Questions en francais, "tu", < 15 mots chacune."""
-
+5 a 8 questions. Francais, "tu"."""
     try:
         resp = client.chat.completions.create(
             model=SCORE_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": prompt_text}],
             temperature=0.7,
             max_tokens=600,
         )
@@ -459,12 +464,14 @@ Exemple:
         if isinstance(data, dict):
             blocks = data.get("blocks") or data.get("questions") or data.get("blocs") or None
             if blocks and isinstance(blocks, list) and len(blocks) > 0 and isinstance(blocks[0], list):
+                _log(f"build_questionnaire_blocks: LLM returned {len(blocks)} blocks")
                 return {"blocks": blocks}
     except Exception as e:
         _log(f"build_questionnaire_blocks LLM call failed: {e}")
 
-    # Fallback: flat list from same LLM approach
+    _log("build_questionnaire_blocks: step 5 fallback build_questionnaire")
     flat = build_questionnaire(project_desc)
+    _log(f"build_questionnaire_blocks: fallback returned {len(flat)} questions")
     return {"blocks": [flat[i:i+3] for i in range(0, len(flat), 3)]}
 
 

@@ -145,9 +145,10 @@ def chat_message(session_id):
                 return jsonify({"type": "questionnaire", "blocks": blocks, "questions": questions, "done": False})
             db_close(conn)
             return jsonify({"done": True})
-        except Exception:
+        except Exception as e:
+            print(f"[CREDO] chat_message questionnaire error: {e}", flush=True)
             db_close(conn)
-            return jsonify({"error": "Credo IA indisponible."}), 503
+            return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
 
     # Normal single-question flow (after questionnaire or standalone)
     msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
