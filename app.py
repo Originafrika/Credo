@@ -9,6 +9,7 @@ from flask import Flask, render_template, request, jsonify, session, send_from_d
 from credo_ai import (
     score_from_answers,
     build_first_question,
+    build_questionnaire,
     build_next_question,
     extract_document_fields,
     generate_code,
@@ -153,7 +154,6 @@ def chat_message(session_id):
         conn.close()
         return jsonify({"error": "Session invalide"}), 404
 
-    # Sauvegarde la derniere question et reponse
     last_msg = conn.execute(
         "SELECT question FROM messages WHERE session_id = ? AND role = 'ia' ORDER BY id DESC LIMIT 1",
         (session_id,),
@@ -166,20 +166,34 @@ def chat_message(session_id):
     )
     conn.commit()
 
-    # Recupere tout l'historique
+    # Compter les messages user (1er = description projet)
+    user_count = conn.execute(
+        "SELECT COUNT(*) FROM messages WHERE session_id = ? AND role = 'user'",
+        (session_id,),
+    ).fetchone()[0]
+
+    if user_count == 1:
+        # 1er message = description projet → generer questionnaire
+        try:
+            questions = build_questionnaire(answer)
+        except Exception as e:
+            conn.close()
+            return jsonify({"error": "Credo IA indisponible."}), 503
+        conn.close()
+        return jsonify({"type": "questionnaire", "questions": questions, "done": False})
+
+    # Messages suivants: clarifications ou DONE
     messages = conn.execute(
         "SELECT question, answer FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id",
         (session_id,),
     ).fetchall()
-
     answers = [{"q": m["question"], "a": m["answer"]} for m in messages]
 
-    # Prochaine question via IA (decide elle-meme si assez d'infos)
     try:
         next_q = build_next_question(answers)
     except Exception as e:
         conn.close()
-        return jsonify({"error": "Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
+        return jsonify({"error": "Credo IA indisponible."}), 503
 
     conn.execute(
         "INSERT INTO messages (session_id, role, question) VALUES (?, 'ia', ?)",
@@ -190,6 +204,61 @@ def chat_message(session_id):
 
     if next_q == "DONE":
         return jsonify({"done": True})
+    return jsonify({"question": next_q, "done": False})
+
+
+@app.route("/api/chat/<session_id>/questionnaire-answers", methods=["POST"])
+def submit_questionnaire(session_id):
+    """Recoit les reponses du questionnaire (questions + reponses)."""
+    data = request.json
+    answers_list = data.get("answers", [])
+    questions_list = data.get("questions", [])
+
+    if not answers_list or not isinstance(answers_list, list):
+        return jsonify({"error": "Reponses invalides"}), 400
+
+    conn = get_db()
+    session_row = conn.execute(
+        "SELECT * FROM sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    if not session_row:
+        conn.close()
+        return jsonify({"error": "Session invalide"}), 404
+
+    for i, ans in enumerate(answers_list):
+        if not ans or not ans.strip():
+            continue
+        q_text = questions_list[i] if i < len(questions_list) else "Question {}".format(i + 1)
+        conn.execute(
+            "INSERT INTO messages (session_id, role, question, answer) VALUES (?, 'user', ?, ?)",
+            (session_id, q_text, ans.strip()),
+        )
+
+    conn.commit()
+
+    # Verifier si assez d'infos
+    messages = conn.execute(
+        "SELECT question, answer FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id",
+        (session_id,),
+    ).fetchall()
+    user_answers = [{"q": m["question"], "a": m["answer"]} for m in messages]
+
+    try:
+        next_q = build_next_question(user_answers)
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": "Credo IA indisponible."}), 503
+
+    if next_q == "DONE":
+        conn.close()
+        return jsonify({"done": True})
+
+    conn.execute(
+        "INSERT INTO messages (session_id, role, question) VALUES (?, 'ia', ?)",
+        (session_id, next_q),
+    )
+    conn.commit()
+    conn.close()
     return jsonify({"question": next_q, "done": False})
 
 

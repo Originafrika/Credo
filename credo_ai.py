@@ -295,25 +295,37 @@ def _compact_history(answers: list[dict]) -> list[dict]:
 
 
 def build_first_question() -> str:
-    prompt = """Tu es un conseiller credit. Tu dois poser TOUTES les questions necessaires pour evaluer la solvabilite de quelqu'un en UN SEUL message.
+    return "Decris-moi ton projet ou besoin en quelques phrases : quel secteur, pourquoi ce pret, quelle est ta situation ?"
 
-Couvre ces themes obligatoirement (formule-les en questions naturelles):
-- Activite et anciennete
-- Revenu mensuel
-- Montant souhaite
-- Garanties disponibles
-- Historique credit
-- Documents qu'il peut fournir
 
-Ecris un message en francais, tutoie ("tu"), liste les questions numerotees. Termine par: "Reponds a toutes en un seul message. Si tu n'as pas d'info pour une question, ecris 'rien'." Ne pose pas de questions redondantes."""
+def build_questionnaire(project_desc: str) -> list[str]:
+    """LLM genere un questionnaire personnalise base sur la description du projet."""
+    prompt = f"""Le client a decrit son projet: "{project_desc}"
+
+Genere une liste de questions personnalisees pour evaluer sa solvabilite. Les questions doivent etre SPECIFIQUES a son projet, pas generiques.
+
+Couvre obligatoirement: activite, revenu, montant, duree, garanties, credit, documents.
+
+Retourne UNIQUEMENT un tableau JSON de questions, ex:
+["Question 1 ?", "Question 2 ?", "Question 3 ?", "Question 4 ?", "Question 5 ?", "Question 6 ?"]
+
+Questions en francais, "tu". 6-8 questions max. Chaque question = un sujet different."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
         messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
         temperature=0.7,
-        max_tokens=300,
+        max_tokens=500,
     )
-    return resp.choices[0].message.content.strip()
+    data = json.loads(resp.choices[0].message.content)
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for v in data.values():
+            if isinstance(v, list):
+                return v
+    return ["Quelle est ton activite ?", "Combien gagnes-tu par mois ?", "Combien veux-tu emprunter ?", "Depuis combien de temps ?", "As-tu des garanties ?", "As-tu deja eu un credit ?", "Quels documents peux-tu fournir ?"]
 
 
 def build_next_question(answers: list[dict]) -> str:
