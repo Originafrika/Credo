@@ -322,12 +322,12 @@ def build_questionnaire(project_desc: str) -> list[str]:
     partners, products, rules = _get_partners(amount_hint, sector_hint)
 
     partners_ctx = "\n".join(
-        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs requis: {', '.join(p['docs'])}."
+        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs requis: {', '.join(p['docs'] or [])}."
         for p in partners[:8]
     ) if partners else "Aucun partenaire trouve."
 
     products_ctx = "\n".join(
-        f"- {pr['partner']} > {pr['product']}: {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'])}."
+        f"- {pr['partner']} > {pr['product']}: {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'] or [])}."
         for pr in products[:8]
     ) if products else ""
 
@@ -364,27 +364,33 @@ Exemple:
 Chaque question verifie UN critere precis des partenaires (montant, duree, garantie, documents, secteur, historique, revenu).
 Questions en francais, "tu". 5 a 8 questions total. Chaque question < 15 mots."""
 
-    resp = client.chat.completions.create(
-        model=SCORE_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        temperature=0.7,
-        max_tokens=500,
-    )
-    data = json.loads(resp.choices[0].message.content)
-    # Expect {"blocks": [["Q1","Q2"], ["Q3","Q4","Q5"], ...]}
-    if isinstance(data, dict):
-        blocks = data.get("blocks") or data.get("questions") or data.get("blocs") or None
-        if blocks and isinstance(blocks, list):
-            flat = [q for block in blocks for q in block]
-            if flat:
-                return flat  # return flat, blocks returned separately
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
+    try:
+        resp = client.chat.completions.create(
+            model=SCORE_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=600,
+        )
+        raw = resp.choices[0].message.content
+        # Try to extract JSON from response
+        start = raw.find('{')
+        end = raw.rfind('}') + 1
+        if start >= 0 and end > start:
+            raw = raw[start:end]
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            blocks = data.get("blocks") or data.get("questions") or data.get("blocs") or None
+            if blocks and isinstance(blocks, list):
+                flat = [q for block in blocks for q in block]
+                if flat:
+                    return flat
+        if isinstance(data, list):
+            return data
         for v in data.values():
             if isinstance(v, list):
                 return v
+    except Exception:
+        _log("build_questionnaire LLM call failed, using fallback")
     return ["Quelle est ton activite ?", "Combien gagnes-tu par mois ?", "Combien veux-tu emprunter ?", "Depuis combien de temps ?", "As-tu des garanties ?", "As-tu deja eu un credit ?", "Quels documents peux-tu fournir ?"]
 
 
@@ -400,12 +406,12 @@ def build_questionnaire_blocks(project_desc: str) -> dict:
     partners, products, rules = _get_partners(amount_hint, sector_hint)
 
     partners_ctx = "\n".join(
-        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs requis: {', '.join(p['docs'])}."
+        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs requis: {', '.join(p['docs'] or [])}."
         for p in partners[:8]
     ) if partners else "Aucun partenaire trouve."
 
     products_ctx = "\n".join(
-        f"- {pr['partner']} > {pr['product']}: {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'])}."
+        f"- {pr['partner']} > {pr['product']}: {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'] or [])}."
         for pr in products[:8]
     ) if products else ""
 
@@ -437,22 +443,34 @@ Exemple:
 
 5 a 8 questions total. Questions en francais, "tu", < 15 mots chacune."""
 
-    resp = client.chat.completions.create(
-        model=SCORE_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        temperature=0.7,
-        max_tokens=500,
-    )
-    data = json.loads(resp.choices[0].message.content)
-    blocks = None
-    if isinstance(data, dict):
-        blocks = data.get("blocks") or data.get("questions") or data.get("blocs") or None
-    if blocks and isinstance(blocks, list) and len(blocks) > 0 and isinstance(blocks[0], list):
-        return {"blocks": blocks}
-    # Fallback: flat list with BLOCK_SIZE=3
-    flat = build_questionnaire(project_desc)
-    return {"blocks": [flat[i:i+3] for i in range(0, len(flat), 3)]}
+    try:
+        resp = client.chat.completions.create(
+            model=SCORE_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=600,
+        )
+        raw = resp.choices[0].message.content
+        start = raw.find('{')
+        end = raw.rfind('}') + 1
+        if start >= 0 and end > start:
+            raw = raw[start:end]
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            blocks = data.get("blocks") or data.get("questions") or data.get("blocs") or None
+            if blocks and isinstance(blocks, list) and len(blocks) > 0 and isinstance(blocks[0], list):
+                return {"blocks": blocks}
+    except Exception as e:
+        _log(f"build_questionnaire_blocks LLM call failed: {e}")
+
+    # Fallback: flat list
+    try:
+        flat = build_questionnaire(project_desc)
+        if flat:
+            return {"blocks": [flat[i:i+3] for i in range(0, len(flat), 3)]}
+    except Exception as e:
+        _log(f"build_questionnaire_blocks fallback failed: {e}")
+    return {"blocks": [["Quelle est ton activite ?", "Combien gagnes-tu par mois ?"], ["Combien veux-tu emprunter ?", "Depuis combien de temps ?", "As-tu des garanties ?"]]}
 
 
 def build_next_question(answers: list[dict]) -> str:
