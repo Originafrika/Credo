@@ -6,11 +6,65 @@ import string
 from datetime import datetime
 
 from groq import Groq
+import psycopg2
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
 
 SCORE_MODEL = "llama-3.3-70b-versatile"
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+NEON_DSN = os.environ.get("NEON_DSN", "")
+
+# ==============================================================
+# NEON DB — query real partner data at scoring time
+# ==============================================================
+
+def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> list[dict]:
+    """LLM querie la DB au moment du scoring pour obtenir les vrais partenaires."""
+    if not NEON_DSN:
+        return []
+    try:
+        conn = psycopg2.connect(NEON_DSN)
+        cur = conn.cursor()
+        sectors = ['commerce', 'agriculture', 'service', 'artisanat']
+        if sector_hint:
+            for s in sectors:
+                if s in sector_hint.lower():
+                    sectors = [s]
+                    break
+        cur.execute(
+            """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate
+               FROM partners
+               WHERE countries @> ARRAY[%s]::TEXT[]
+                 AND min_amount <= %s
+                 AND max_amount >= %s
+               ORDER BY
+                 CASE WHEN %s BETWEEN min_amount AND max_amount THEN 0 ELSE 1 END,
+                 base_rate NULLS LAST,
+                 min_amount ASC
+               LIMIT 12""",
+            (country, amount, amount, amount)
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return [
+            {
+                "name": r[0],
+                "type": r[1],
+                "min_amount": r[2],
+                "max_amount": r[3],
+                "rate": r[4],
+                "sectors": r[5],
+                "docs": r[6],
+                "description": r[7],
+                "base_rate": r[8],
+                "max_rate": r[9],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        _log(f"Neon query failed: {e}")
+        return []
 
 # ==============================================================
 # HELPERS
@@ -113,6 +167,26 @@ def score_from_answers(answers: list[dict]) -> dict:
 
 def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool, realistic_max: int) -> str:
     qa = "\n".join(f"- {a.get('q', '')}: {a.get('a', '')}" for a in answers)
+
+    # LLM query DB au moment du scoring
+    sector_hint = ""
+    for a in answers:
+        r = (a.get("a") or "").lower()
+        if any(w in r for w in ["commerce", "vente", "boutique"]):
+            sector_hint = "commerce"
+        elif any(w in r for w in ["agriculture", "ferme", "champ"]):
+            sector_hint = "agriculture"
+        elif any(w in r for w in ["service", "transport", "restaurant"]):
+            sector_hint = "service"
+        elif any(w in r for w in ["artisan", "atelier", "couture"]):
+            sector_hint = "artisanat"
+
+    partners = _get_partners(realistic_max, sector_hint)
+    partners_str = "\n".join(
+        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}, secteurs: {', '.join(p['sectors'])}"
+        for p in partners
+    ) if partners else "Aucun partenaire trouve dans la base. Recommande des institutions microfinance generalistes."
+
     return f"""Tu es un analyste de credit pour le marche UEMOA. Evalue CE profil precis.
 
 Profil:
@@ -123,13 +197,16 @@ Montant demande: {wanted} FCFA
 Collateral: {"oui" if collateral else "non"}
 Montant realiste max (calcule): {realistic_max} FCFA
 
+Partenaires disponibles dans la base (donnees fraiches):
+{partners_str}
+
 Tu es STRICT:
 - Jamais de pret > 6x le revenu mensuel sans collaterale
 - Jamais de pret > 24x avec collaterale solide
 - Si le montant demande est irrealiste, explique-le dans analysis
 - Le marche informel est normal en Afrique, ce n'est pas un risque
-- 90M pour un labo IA avec 40k/mois = IRREALISTE, expliquer pourquoi
 - Un score bas avec explication honnete vaut mieux qu'un faux espoir
+- Choisis les partenaires PARMI la liste ci-dessus — ne pas en inventer
 
 Retourne CE JSON:
 {{
