@@ -215,6 +215,11 @@
             const tipsHtml = d.tips.map(t => `<li class="flex items-start gap-2"><svg class="w-5 h-5 text-yellow-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg><span class="text-gray-600 text-sm">${t}</span></li>`).join('');
 
             r.innerHTML = `
+                ${d.analysis ? `
+                <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-6 text-sm text-gray-700 leading-relaxed">
+                    <p>${d.analysis}</p>
+                </div>` : ''}
+
                 <div class="text-center p-6 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl mb-6">
                     <div class="text-6xl font-extrabold text-indigo-600 mb-2">${d.score}<span class="text-2xl text-gray-400">/1000</span></div>
                     <p class="text-lg font-medium">Risque <span class="${d.risk==='Faible'?'text-green-600':d.risk==='Moyen'?'text-orange-600':'text-red-600'}">${d.risk}</span></p>

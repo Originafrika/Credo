@@ -67,6 +67,7 @@ def init_db():
             tips TEXT,
             code TEXT UNIQUE,
             loan_amount INTEGER,
+            analysis TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );
     """)
@@ -214,8 +215,8 @@ def analyze(session_id):
     # Sauvegarde
     conn.execute(
         """INSERT OR REPLACE INTO results
-        (session_id, score, risk, max_amount, partners, missing_docs, tips, code)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             session_id,
             result["score"],
@@ -225,6 +226,7 @@ def analyze(session_id):
             json.dumps(result.get("missing_documents", [])),
             json.dumps(result.get("improvement_tips", [])),
             code,
+            result.get("analysis", ""),
         ),
     )
     conn.execute(
@@ -241,6 +243,7 @@ def analyze(session_id):
         "partners": result.get("recommended_partners", []),
         "missing_documents": result.get("missing_documents", []),
         "tips": result.get("improvement_tips", []),
+        "analysis": result.get("analysis", ""),
         "code": code,
         "plan": plan,
     })
@@ -268,6 +271,7 @@ def get_result(session_id):
         "missing_documents": json.loads(result["missing_docs"]),
         "tips": json.loads(result["tips"]),
         "code": result["code"],
+        "analysis": result["analysis"],
         "plan": session_row["plan"] if session_row else "2500",
     })
 
