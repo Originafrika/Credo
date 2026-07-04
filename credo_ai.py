@@ -295,16 +295,25 @@ def _compact_history(answers: list[dict]) -> list[dict]:
 
 
 def build_first_question() -> str:
-    return """Bonjour, je suis Credo. Pour evaluer ta solvabilite, reponds en UN SEUL message a TOUTES les questions suivantes :
+    prompt = """Tu es un conseiller credit. Tu dois poser TOUTES les questions necessaires pour evaluer la solvabilite de quelqu'un en UN SEUL message.
 
-1. Quelle est ton activite principale ? Depuis combien de temps ?
-2. Combien gagnes-tu par mois environ ?
-3. Combien veux-tu emprunter exactement ?
-4. Quelles garanties peux-tu offrir ? (terrain, boutique, vehicule, materiel, epargne)
-5. As-tu deja eu un credit ? Si oui, rembourse ?
-6. Quels documents peux-tu fournir ? (piece d'identite, preuve revenus, photo activite, patente)
+Couvre ces themes obligatoirement (formule-les en questions naturelles):
+- Activite et anciennete
+- Revenu mensuel
+- Montant souhaite
+- Garanties disponibles
+- Historique credit
+- Documents qu'il peut fournir
 
-Reponds aux 6 questions en un seul message. Si tu n'as pas d'info pour une question, ecris "rien". C'est important d'avoir tout."""
+Ecris un message en francais, tutoie ("tu"), liste les questions numerotees. Termine par: "Reponds a toutes en un seul message. Si tu n'as pas d'info pour une question, ecris 'rien'." Ne pose pas de questions redondantes."""
+
+    resp = client.chat.completions.create(
+        model=SCORE_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=300,
+    )
+    return resp.choices[0].message.content.strip()
 
 
 def build_next_question(answers: list[dict]) -> str:
