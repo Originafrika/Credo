@@ -144,7 +144,9 @@ def _compute_realistic_max(monthly_revenue: int, has_collateral: bool, amount_wa
     cap = 24 if has_collateral else 6
     realistic = monthly_revenue * cap
 
-    # Si la personne veut plus que le realistic, on plafonne
+    if realistic < 50000:
+        realistic = 50000  # micro-credit minimum
+
     if amount_wanted > 0 and amount_wanted > realistic:
         return realistic
 
@@ -209,7 +211,7 @@ def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral
     partners_str = "\n".join(
         f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}"
         for p in partners
-    ) if partners else "Aucun partenaire trouve dans la base."
+    ) if partners else "Aucun partenaire dans la base pour ce montant secteur. Base-toi sur les microfinances generalistes UEMOA (FUCEC, WAGES, Cofina, BAOBAB)."
 
     products_str = "\n".join(
         f"- {pr['product']} ({pr['partner']}): {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%"
@@ -221,7 +223,7 @@ def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral
         for r in rules[:6]
     ) if rules else ""
 
-    return f"""Tu es un analyste de credit pour le marche UEMOA. Evalue CE profil precis.
+    return f"""Tu es un analyste de credit pour le marche UEMOA. Tu analyses CE profil precis, PAS un profil generique.
 
 Profil:
 {qa}
@@ -231,33 +233,33 @@ Montant demande: {wanted} FCFA
 Collateral: {"oui" if collateral else "non"}
 Montant realiste max (calcule): {realistic_max} FCFA
 
---- PARTENAIRES DISPONIBLES (base de donnees) ---
+--- PARTENAIRES DISPONIBLES ---
 {partners_str}
-
 --- PRODUITS DE CREDIT ---
 {products_str}
-
 --- REGLES METIER ---
 {rules_str}
 
 Instructions:
-- Si le montant demande est irrealiste, explique-le dans analysis
-- Le marche informel est normal en Afrique, ce n'est pas un risque
-- Choisis TOUJOURS les partenaires parmi la liste ci-dessus — ne pas en inventer
-- Associe chaque partenaire recommande a un produit specifique de sa gamme
-- Prefere les microfinances aux banques pour les petits montants (<1MF)
+- Analyse CE profil precis, ne recopie pas de template generique
+- Mentionne les details specifiques du profil dans analysis (secteur, montant, revenu, duree)
+- Si le montant demande est irrealiste, explique POURQUOI (regle 6x/24x)
+- Choisis les partenaires parmi la liste ci-dessus — ne pas en inventer
+- Associates chaque partenaire a un produit specifique de sa gamme
+- Les improvement_tips doivent etre SPECIFIQUES a ce profil, pas des conseils generiques
+- Quand aucun partenaire trouve dans la base, recommande FUCEC-Togo, WAGES Togo, Cofina ou BAOBAB avec un produit generique
 
 Retourne CE JSON:
 {{
   "score": 450,
   "risk": "Eleve",
   "max_amount": 500000,
-  "analysis": "2-3 phrases expliquant le verdict honnetement",
+  "analysis": "3-4 phrases SPECIFIQUES a ce profil. Cite le secteur, le montant, le revenu. Explique le verdict.",
   "recommended_partners": [
-    {{"name": "Institution", "product": "Nom produit", "amount": 300000, "rate": "12%", "reason": "Pourquoi ce partenaire et ce produit"}}
+    {{"name": "Institution", "product": "Nom produit si disponible", "amount": 300000, "rate": "12%", "reason": "Pourquoi CE partenaire et CE produit pour CE profil"}}
   ],
   "missing_documents": ["piece_identite"],
-  "improvement_tips": ["Conseil 1"],
+  "improvement_tips": ["Conseil SPECIFIQUE lie au profil, pas generique"],
   "confidence": 0.85
 }}"""
 
@@ -306,7 +308,8 @@ Choisis LE sujet le plus critique PARMI ceux-ci (ne pose pas de question deja re
 - CREDIT: si tu ne sais pas s'il a deja eu un credit
 - GARANTIE: si tu ne sais pas s'il a des garanties
 
-Ne pose qu'une seule question. Maximum 12 mots. Naturel. En "tu"."""
+Si tu as TOUTES les infos necessaires pour evaluer ce profil (activite, revenu, montant, duree, epargne, credit, garantie), reponds uniquement "DONE".
+Sinon, pose UNE question. Maximum 12 mots. Naturel. En "tu"."""
 
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
@@ -315,6 +318,8 @@ Ne pose qu'une seule question. Maximum 12 mots. Naturel. En "tu"."""
         max_tokens=80,
     )
     q = resp.choices[0].message.content.strip().strip('"').strip("'")
+    if "DONE" in q.upper() and len(q) < 10:
+        return "DONE"
     return q if q else "Peux-tu m'en dire plus ?"
 
 # ==============================================================

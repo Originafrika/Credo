@@ -174,12 +174,7 @@ def chat_message(session_id):
 
     answers = [{"q": m["question"], "a": m["answer"]} for m in messages]
 
-    # Decide si assez d'infos (6+ reponses = suffisant)
-    if len(answers) >= 6:
-        conn.close()
-        return jsonify({"done": True})
-
-    # Prochaine question via IA
+    # Prochaine question via IA (decide elle-meme si assez d'infos)
     try:
         next_q = build_next_question(answers)
     except Exception as e:
@@ -193,6 +188,8 @@ def chat_message(session_id):
     conn.commit()
     conn.close()
 
+    if next_q == "DONE":
+        return jsonify({"done": True})
     return jsonify({"question": next_q, "done": False})
 
 
