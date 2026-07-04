@@ -3,100 +3,608 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Credo - Analyse solvabilité</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>*{font-family:'Inter',sans-serif}</style>
+    <title>Credo — Vérifie ta solvabilité</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --amber: oklch(0.68 0.18 75);
+            --amber-deep: oklch(0.55 0.2 75);
+            --amber-light: oklch(0.92 0.06 75);
+            --amber-bg: oklch(0.97 0.015 75);
+            --teal: oklch(0.55 0.12 195);
+            --teal-light: oklch(0.92 0.04 195);
+            --surface: oklch(0.99 0.003 75);
+            --cream: oklch(0.975 0.008 75);
+            --charcoal: oklch(0.15 0.01 60);
+            --gray-mid: oklch(0.5 0.01 60);
+            --gray-light: oklch(0.85 0.01 60);
+            --success: oklch(0.62 0.18 145);
+            --success-bg: oklch(0.93 0.06 145);
+            --error: oklch(0.55 0.22 30);
+            --error-bg: oklch(0.95 0.04 30);
+            --warning: oklch(0.7 0.18 85);
+            --warning-bg: oklch(0.95 0.04 85);
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-body: 'DM Sans', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            --radius: 12px;
+            --radius-lg: 20px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+        body {
+            font-family: var(--font-body);
+            background: var(--cream);
+            color: var(--charcoal);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        .nav {
+            background: var(--surface);
+            border-bottom: 1px solid var(--gray-light);
+            padding: 1rem 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .nav-inner {
+            max-width: 640px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .nav-logo {
+            width: 32px;
+            height: 32px;
+            background: var(--amber);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 0.875rem;
+        }
+        .nav-title {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 1.125rem;
+            color: var(--charcoal);
+        }
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 4rem;
+        }
+        .card {
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+        }
+        .card + .card { margin-top: 1.25rem; }
+        .step-hidden { display: none; }
+        .step-visible { display: block; animation: fadeUp 0.35s ease; }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.625rem; line-height: 1.25; margin-bottom: 0.5rem; }
+        h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; margin-bottom: 0.5rem; }
+        .subtitle { color: var(--gray-mid); font-size: 0.95rem; margin-bottom: 1.5rem; }
+        .plan-grid { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
+        .plan-option {
+            display: block;
+            border: 1.5px solid var(--gray-light);
+            border-radius: var(--radius);
+            padding: 1.125rem 1.25rem;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            position: relative;
+        }
+        .plan-option:hover { border-color: var(--amber); }
+        .plan-option input { position: absolute; opacity: 0; }
+        .plan-option:has(input:checked) {
+            border-color: var(--amber);
+            background: var(--amber-bg);
+        }
+        .plan-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+        .plan-name { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+        .plan-price { font-family: var(--font-display); font-weight: 700; color: var(--amber-deep); }
+        .plan-desc { font-size: 0.85rem; color: var(--gray-mid); margin-top: 0.25rem; }
+        .plan-badge {
+            display: inline-block;
+            background: var(--amber);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.15rem 0.6rem;
+            border-radius: 100px;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
+        .field { margin-bottom: 1.25rem; }
+        .field label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 0.35rem;
+            color: var(--gray-mid);
+        }
+        .field input, .field textarea {
+            width: 100%;
+            border: 1.5px solid var(--gray-light);
+            border-radius: var(--radius);
+            padding: 0.875rem 1rem;
+            font-family: var(--font-body);
+            font-size: 1rem;
+            background: var(--surface);
+            transition: border-color 0.2s;
+            outline: none;
+        }
+        .field input:focus { border-color: var(--amber); box-shadow: 0 0 0 3px var(--amber-light); }
+        .btn {
+            display: block;
+            width: 100%;
+            border: none;
+            border-radius: var(--radius);
+            padding: 0.9rem 1.5rem;
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary {
+            background: var(--amber);
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) { background: var(--amber-deep); transform: translateY(-1px); }
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+        .btn-success:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+        .btn-outline {
+            background: transparent;
+            color: var(--amber-deep);
+            border: 1.5px solid var(--amber);
+        }
+        .btn-outline:hover:not(:disabled) { background: var(--amber-bg); }
+        .btn-sm { padding: 0.65rem 1.25rem; font-size: 0.875rem; display: inline-block; width: auto; }
+        .footnote { font-size: 0.75rem; color: var(--gray-light); text-align: center; margin-top: 0.75rem; }
+        /* Chat */
+        .chat-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .chat-avatar {
+            width: 38px; height: 38px;
+            background: var(--amber-light);
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-display);
+            font-weight: 700;
+            color: var(--amber-deep);
+            font-size: 0.9rem;
+        }
+        .chat-name { font-family: var(--font-display); font-weight: 600; font-size: 0.95rem; }
+        .chat-status { font-size: 0.75rem; color: var(--gray-mid); }
+        .progress { margin-bottom: 1.25rem; }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--gray-mid);
+            margin-bottom: 0.35rem;
+        }
+        .progress-track {
+            width: 100%;
+            height: 4px;
+            background: var(--gray-light);
+            border-radius: 100px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--amber);
+            border-radius: 100px;
+            transition: width 0.4s ease;
+        }
+        .msg-area {
+            max-height: 360px;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .msg {
+            padding: 0.875rem 1.125rem;
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            line-height: 1.55;
+            animation: fadeUp 0.25s ease;
+        }
+        .msg-ia { background: var(--amber-bg); }
+        .msg-user { background: var(--cream); align-self: flex-end; }
+        .msg-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.3rem;
+        }
+        .msg-ia .msg-label { color: var(--amber-deep); }
+        .msg-user .msg-label { color: var(--gray-mid); }
+        .input-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .input-row input {
+            flex: 1;
+            border: 1.5px solid var(--gray-light);
+            border-radius: var(--radius);
+            padding: 0.75rem 1rem;
+            font-family: var(--font-body);
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-row input:focus { border-color: var(--amber); }
+        .input-row button {
+            border: none;
+            background: var(--amber);
+            color: white;
+            border-radius: var(--radius);
+            padding: 0.75rem 1.25rem;
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        .input-row button:hover { background: var(--amber-deep); }
+        /* Questionnaire */
+        .q-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.875rem;
+            margin-bottom: 1.25rem;
+        }
+        .q-item label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--charcoal);
+            margin-bottom: 0.35rem;
+            line-height: 1.4;
+        }
+        .q-item input {
+            width: 100%;
+            border: 1.5px solid var(--gray-light);
+            border-radius: var(--radius);
+            padding: 0.7rem 0.9rem;
+            font-family: var(--font-body);
+            font-size: 0.875rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .q-item input:focus { border-color: var(--amber); }
+        /* Upload */
+        .upload-zone {
+            border: 1.5px dashed var(--gray-light);
+            border-radius: var(--radius);
+            padding: 2rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .upload-zone:hover { border-color: var(--amber); background: var(--amber-bg); }
+        .upload-icon { width: 36px; height: 36px; color: var(--gray-mid); margin: 0 auto 0.5rem; }
+        .upload-title { font-weight: 500; font-size: 0.9rem; color: var(--charcoal); }
+        .upload-hint { font-size: 0.75rem; color: var(--gray-mid); margin-top: 0.25rem; }
+        .file-list { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; }
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--success);
+        }
+        .file-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+        /* Result */
+        .analysis-text {
+            background: var(--amber-bg);
+            border-radius: var(--radius);
+            padding: 1.125rem;
+            font-size: 0.9rem;
+            line-height: 1.65;
+            color: var(--charcoal);
+            margin-bottom: 1.5rem;
+        }
+        .score-block {
+            text-align: center;
+            padding: 2rem 1rem;
+            background: var(--cream);
+            border-radius: var(--radius-lg);
+            margin-bottom: 1.5rem;
+        }
+        .score-number {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 4rem;
+            line-height: 1;
+            color: var(--amber-deep);
+        }
+        .score-unit {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            color: var(--gray-mid);
+            vertical-align: super;
+        }
+        .score-risk {
+            margin-top: 0.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        .score-risk .low { color: var(--success); }
+        .score-risk .medium { color: var(--warning); }
+        .score-risk .high { color: var(--error); }
+        .amount-block {
+            background: var(--success-bg);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+        .amount-label { font-size: 0.8rem; color: var(--success); font-weight: 500; }
+        .amount-value {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 2rem;
+            color: var(--success);
+            margin-top: 0.15rem;
+        }
+        .code-block {
+            background: var(--amber);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .code-label { font-size: 0.8rem; color: rgba(255,255,255,0.7); }
+        .code-value {
+            font-family: var(--font-mono);
+            font-weight: 600;
+            font-size: 2.25rem;
+            letter-spacing: 0.1em;
+            color: white;
+            margin-top: 0.25rem;
+            user-select: all;
+        }
+        .code-hint { font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.5rem; }
+        .whatsapp-block {
+            background: var(--teal-light);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+        .whatsapp-block p { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.75rem; }
+        .whatsapp-template {
+            background: white;
+            border-radius: calc(var(--radius) - 2px);
+            padding: 1rem;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: var(--charcoal);
+            border: 1px solid var(--gray-light);
+            margin-bottom: 0.75rem;
+            user-select: all;
+        }
+        .partner-list { margin-bottom: 1.5rem; }
+        .partner-list h3 {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+        .partner-card {
+            border: 1px solid var(--gray-light);
+            border-radius: var(--radius);
+            padding: 1rem 1.125rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s;
+            margin-bottom: 0.625rem;
+        }
+        .partner-card:hover { border-color: var(--amber); }
+        .partner-name { font-weight: 600; font-size: 0.9rem; }
+        .partner-reason { font-size: 0.8rem; color: var(--gray-mid); margin-top: 0.15rem; }
+        .partner-amount { font-family: var(--font-display); font-weight: 700; color: var(--amber-deep); font-size: 0.95rem; }
+        .partner-rate { font-size: 0.75rem; color: var(--gray-mid); text-align: right; }
+        .doc-list {
+            background: var(--warning-bg);
+            border-radius: var(--radius);
+            padding: 1.125rem;
+            margin-bottom: 1.5rem;
+        }
+        .doc-list h4 { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; }
+        .doc-list ul { list-style: none; }
+        .doc-list li {
+            font-size: 0.85rem;
+            color: var(--warning);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.2rem 0;
+        }
+        .doc-list li::before {
+            content: '';
+            width: 6px; height: 6px;
+            background: var(--warning);
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .tips-block {
+            background: var(--cream);
+            border-radius: var(--radius);
+            padding: 1.125rem;
+            margin-bottom: 1.5rem;
+        }
+        .tips-block h4 { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.625rem; }
+        .tips-block ul { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+        .tips-block li {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--charcoal);
+        }
+        .tips-block li svg {
+            width: 18px; height: 18px;
+            color: var(--warning);
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .banner-upgrade {
+            background: var(--warning-bg);
+            border-radius: var(--radius);
+            padding: 1rem;
+            font-size: 0.85rem;
+            color: var(--warning);
+            margin-bottom: 1.5rem;
+        }
+        .error-card {
+            background: var(--error-bg);
+            border: 1px solid var(--error);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            text-align: center;
+        }
+        .error-card h2 { color: var(--error); }
+        .error-card p { color: var(--error); font-size: 0.9rem; margin-top: 0.5rem; }
+        @media (max-width: 480px) {
+            .container { padding: 1.25rem 1rem 3rem; }
+            .card { padding: 1.5rem; }
+            .score-number { font-size: 3rem; }
+            .amount-value { font-size: 1.625rem; }
+            .code-value { font-size: 1.75rem; }
+            h1 { font-size: 1.375rem; }
+        }
+        .msg-area::-webkit-scrollbar { width: 4px; }
+        .msg-area::-webkit-scrollbar-thumb { background: var(--gray-light); border-radius: 100px; }
+    </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <nav class="bg-white shadow-sm">
-        <div class="max-w-4xl mx-auto px-4 py-3">
-            <span class="text-2xl font-bold text-indigo-600">Credo</span>
+<body>
+    <nav class="nav">
+        <div class="nav-inner">
+            <div class="nav-logo">C</div>
+            <span class="nav-title">Credo</span>
         </div>
     </nav>
 
-    <div class="max-w-2xl mx-auto px-4 py-8">
+    <div class="container">
         <!-- Step 1: Paiement -->
-        <div id="step-payment" class="bg-white rounded-2xl p-8 shadow-sm border">
-            <h2 class="text-2xl font-bold mb-2">Verifie ta solvabilite</h2>
-            <p class="text-gray-500 mb-6">Choisis ton offre. Paiement via Mobile Money.</p>
-            <div class="space-y-3 mb-6">
-                <label class="block border rounded-xl p-4 cursor-pointer hover:border-indigo-600 transition-colors">
-                    <input type="radio" name="plan" value="2500" class="mr-3">
-                    <span class="font-semibold">Rapport Simple</span>
-                    <span class="text-sm text-gray-500"> - Score + montant estime</span>
-                    <span class="float-right text-indigo-600 font-bold">2,500 FCFA</span>
+        <div id="step-payment" class="card step-visible">
+            <h1>Vérifie ta solvabilité</h1>
+            <p class="subtitle">Choisis ton offre. Paiement via Mobile Money.</p>
+            <div class="plan-grid">
+                <label class="plan-option">
+                    <input type="radio" name="plan" value="2500">
+                    <div class="plan-top">
+                        <span class="plan-name">Rapport Simple</span>
+                        <span class="plan-price">2,500 FCFA</span>
+                    </div>
+                    <div class="plan-desc">Score + montant estimé</div>
                 </label>
-                <label class="block border-2 border-indigo-600 rounded-xl p-4 cursor-pointer bg-indigo-50/50">
-                    <input type="radio" name="plan" value="5000" class="mr-3" checked>
-                    <span class="font-semibold">Rapport Complet</span>
-                    <span class="text-sm text-gray-500"> - Score + mise en contact partenaire</span>
-                    <span class="float-right text-indigo-600 font-bold">5,000 FCFA</span>
-                    <span class="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-full ml-2">Recommande</span>
+                <label class="plan-option">
+                    <input type="radio" name="plan" value="5000" checked>
+                    <div class="plan-top">
+                        <span class="plan-name">Rapport Complet <span class="plan-badge">Recommandé</span></span>
+                        <span class="plan-price">5,000 FCFA</span>
+                    </div>
+                    <div class="plan-desc">Score + mise en contact partenaire</div>
                 </label>
             </div>
-            <div class="mb-4">
-                <label class="block text-sm font-medium mb-1 text-gray-700">Ton numero Mobile Money</label>
-                <input type="tel" id="phone" class="w-full border rounded-xl p-3.5 text-lg" placeholder="Ex: 90 00 00 00" maxlength="12">
+            <div class="field">
+                <label for="phone">Ton numéro Mobile Money</label>
+                <input type="tel" id="phone" placeholder="Ex: 90 00 00 00" maxlength="12">
             </div>
-            <button onclick="startSession()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-lg hover:bg-indigo-700 transition-colors shadow-md">
+            <button onclick="startSession()" class="btn btn-primary">
                 Payer et commencer
             </button>
-            <p class="text-xs text-gray-400 text-center mt-3">Paiement securise via Flooz, Moov, TMoney</p>
+            <p class="footnote">Paiement sécurisé via Flooz, Moov, TMoney</p>
         </div>
 
         <!-- Step 2: Chat IA -->
-        <div id="step-chat" class="hidden space-y-4">
-            <div class="bg-white rounded-2xl p-6 shadow-sm border">
-                <div class="flex items-center gap-3 mb-4">
-                    <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 font-bold">C</div>
+        <div id="step-chat" class="step-hidden">
+            <div class="card">
+                <div class="chat-header">
+                    <div class="chat-avatar">C</div>
                     <div>
-                        <p class="font-semibold">Credo IA</p>
-                        <p class="text-xs text-gray-400">Analyse en cours</p>
+                        <div class="chat-name">Credo IA</div>
+                        <div class="chat-status">Analyse en cours</div>
                     </div>
                 </div>
-                <div id="progress" class="mb-4">
-                    <div class="flex justify-between text-sm text-gray-500 mb-1">
+                <div id="progress-bar" class="progress">
+                    <div class="progress-header">
                         <span>Progression</span>
                         <span id="q-progress">0/6</span>
                     </div>
-                    <div class="w-full bg-gray-100 rounded-full h-2">
-                        <div id="q-bar" class="bg-indigo-600 h-2 rounded-full transition-all" style="width:0%"></div>
+                    <div class="progress-track">
+                        <div id="q-bar" class="progress-fill" style="width:0%"></div>
                     </div>
                 </div>
-                <div id="messages" class="space-y-3 mb-4 max-h-96 overflow-y-auto"></div>
-                <div id="input-area" class="flex gap-2">
-                    <input type="text" id="chat-input" class="flex-1 border rounded-xl p-3.5" placeholder="Ecris ta reponse..." onkeypress="if(event.key==='Enter') sendMsg()">
-                    <button onclick="sendMsg()" class="bg-indigo-600 text-white px-6 rounded-xl hover:bg-indigo-700 font-semibold">Envoyer</button>
+                <div id="messages" class="msg-area"></div>
+                <div id="input-area" class="input-row">
+                    <input type="text" id="chat-input" placeholder="Écris ta réponse..." onkeypress="if(event.key==='Enter') sendMsg()">
+                    <button onclick="sendMsg()">Envoyer</button>
                 </div>
             </div>
 
-            <!-- Upload documents -->
-            <div id="step-upload" class="hidden bg-white rounded-2xl p-6 shadow-sm border">
-                <h3 class="font-semibold mb-1">Documents (optionnel)</h3>
-                <p class="text-sm text-gray-500 mb-4">Ajoute des photos pour une analyse plus precise.</p>
-                <div class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-indigo-600 transition-colors" onclick="document.getElementById('file-input').click()">
-                    <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
-                    <p class="text-gray-600 font-medium">Ajoute tes documents</p>
-                    <p class="text-xs text-gray-400 mt-1">Piece d'identite, justificatif revenus, photo commerce</p>
-                    <input id="file-input" type="file" class="hidden" multiple accept="image/*,.pdf" onchange="uploadFiles(this)">
+            <div id="step-upload" class="card step-hidden">
+                <h2>Documents (optionnel)</h2>
+                <p class="subtitle">Ajoute des photos pour une analyse plus précise.</p>
+                <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+                    <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                    <div class="upload-title">Ajoute tes documents</div>
+                    <div class="upload-hint">Pièce d'identité, justificatif revenus, photo commerce</div>
+                    <input id="file-input" type="file" class="step-hidden" multiple accept="image/*,.pdf" onchange="uploadFiles(this)">
                 </div>
-                <div id="file-list" class="mt-3 space-y-1"></div>
+                <div id="file-list" class="file-list"></div>
             </div>
 
-            <button id="btn-result" class="hidden w-full bg-green-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-green-700 transition-colors shadow-md">
+            <button id="btn-result" class="btn btn-success step-hidden" style="margin-top:0.75rem">
                 Voir mon rapport
             </button>
         </div>
 
-        <!-- Step 3: Resultat -->
-        <div id="step-result" class="hidden">
-            <div class="bg-white rounded-2xl p-8 shadow-sm border">
-                <div class="text-center mb-2">
-                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <!-- Step 3: Résultat -->
+        <div id="step-result" class="step-hidden">
+            <div class="card">
+                <div style="text-align:center;margin-bottom:1.5rem">
+                    <div style="width:56px;height:56px;background:var(--success-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">
+                        <svg width="28" height="28" fill="none" stroke="currentColor" style="color:var(--success)" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
                     </div>
-                    <h2 class="text-2xl font-bold">Ton diagnostic solvabilite</h2>
+                    <h1>Ton diagnostic solvabilité</h1>
                 </div>
                 <div id="result-content"></div>
             </div>
@@ -106,14 +614,16 @@
     <script>
         let sessionId = null;
         let questionCount = 0;
+        let currentQuestions = [];
+        let filesUploaded = 0;
 
         function startSession() {
             const plan = document.querySelector('input[name="plan"]:checked');
             const phone = document.getElementById('phone').value.trim();
-            if (!phone || phone.length < 6) { alert('Numero Mobile Money valide requis'); return; }
+            if (!phone || phone.length < 6) { alert('Numéro Mobile Money valide requis'); return; }
 
-            const btn = document.querySelector('#step-payment button');
-            btn.disabled = true; btn.textContent = 'Demarrage...';
+            const btn = document.querySelector('#step-payment .btn');
+            btn.disabled = true; btn.textContent = 'Démarrage...';
 
             fetch('/api/session/start', {
                 method: 'POST',
@@ -121,26 +631,38 @@
                 body: JSON.stringify({phone, plan: plan ? plan.value : '5000'})
             }).then(r => r.json()).then(data => {
                 if (data.error) {
-                    document.getElementById('step-payment').innerHTML = `<div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center"><h2 class="text-xl font-bold text-red-700 mb-2">Service indisponible</h2><p class="text-red-600">${data.error}</p></div>`;
+                    document.getElementById('step-payment').innerHTML =
+                        `<div class="error-card"><h2>Service indisponible</h2><p>${data.error}</p></div>`;
                     btn.disabled = false; btn.textContent = 'Payer et commencer';
                     return;
                 }
                 sessionId = data.session_id;
-                document.getElementById('step-payment').classList.add('hidden');
-                document.getElementById('step-chat').classList.remove('hidden');
+                showStep('step-payment', 'step-chat');
                 addMsg('Credo IA', data.first_question);
                 updateProgress(0);
             }).catch(() => {
-                alert('Erreur de connexion. Reessaie.');
+                alert('Erreur de connexion. Réessaie.');
                 btn.disabled = false; btn.textContent = 'Payer et commencer';
             });
+        }
+
+        function showStep(hide, show) {
+            document.getElementById(hide).classList.remove('step-visible');
+            document.getElementById(hide).classList.add('step-hidden');
+            document.getElementById(show).classList.remove('step-hidden');
+            document.getElementById(show).classList.add('step-visible');
         }
 
         function addMsg(who, txt) {
             const m = document.getElementById('messages');
             const isIa = who === 'Credo IA';
-            const formatted = isIa && txt.includes('1.') ? txt.replace(/(\d+\.\s[^0-9]+)/g, '<br><strong>$1</strong>').replace(/^<br>/, '') : txt;
-            m.innerHTML += `<div class="${isIa ? 'bg-indigo-50' : 'bg-gray-50'} p-4 rounded-xl"><p class="font-medium text-sm ${isIa ? 'text-indigo-700' : 'text-gray-700'}">${who}</p><p class="text-gray-800 mt-1">${formatted}</p></div>`;
+            const formatted = isIa && txt.includes('1.')
+                ? txt.replace(/(\d+\.\s[^0-9]+)/g, '<br><strong>$1</strong>').replace(/^<br>/, '')
+                : txt;
+            m.innerHTML += `<div class="msg ${isIa ? 'msg-ia' : 'msg-user'}">
+                <div class="msg-label">${who}</div>
+                <div>${formatted}</div>
+            </div>`;
             m.scrollTop = m.scrollHeight;
         }
 
@@ -150,50 +672,54 @@
             document.getElementById('q-bar').style.width = `${(Math.min(n, 6) / 6) * 100}%`;
         }
 
-        let currentQuestions = [];
-
         function renderQuestionnaire(questions) {
             currentQuestions = questions;
             const area = document.getElementById('input-area');
-            let html = '<div class="space-y-3 mb-4">';
+            let html = '<div class="q-grid">';
             questions.forEach((q, i) => {
-                html += `<div><label class="text-sm font-medium text-gray-700 mb-1 block">${q}</label><input type="text" id="q-${i}" class="q-input w-full border rounded-xl p-3 text-sm" placeholder="Ta reponse..."></div>`;
+                html += `<div class="q-item"><label for="q-${i}">${q}</label><input type="text" id="q-${i}" class="q-input" placeholder="Ta réponse..."></div>`;
             });
-            html += `</div><button onclick="submitQuestionnaire()" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors">Envoyer toutes mes reponses</button>`;
+            html += `</div><button onclick="submitQuestionnaire()" class="btn btn-primary">Envoyer toutes mes réponses</button>`;
             area.innerHTML = html;
             document.getElementById('chat-input').style.display = 'none';
         }
 
         function submitQuestionnaire() {
             const answers = currentQuestions.map((_, i) => document.getElementById(`q-${i}`).value.trim());
-            if (answers.every(a => !a)) { alert('Reponds a au moins une question'); return; }
+            if (answers.every(a => !a)) { alert('Réponds à au moins une question'); return; }
 
-            const btn = document.querySelector('#input-area button');
+            const btn = document.querySelector('#input-area .btn');
             btn.disabled = true; btn.textContent = 'Envoi...';
 
             fetch(`/api/chat/${sessionId}/questionnaire-answers`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({answers, questions: currentQuestions})
-            }).then(r => r.json()).then(data => {
+            }).then(r => {
+                if (r.status === 404) {
+                    document.getElementById('step-chat').innerHTML = `<div class="error-card"><h2>Session expirée</h2><p>Ta session a expiré. <a href="/chat/new" style="color:var(--amber-deep)">Recommence ici</a>.</p></div>`;
+                    return null;
+                }
+                return r.json();
+            }).then(data => {
+                if (!data) return;
                 if (data.error) {
-                    document.getElementById('step-chat').innerHTML = `<div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center"><h2 class="text-xl font-bold text-red-700 mb-2">Service indisponible</h2><p class="text-red-600">${data.error}</p></div>`;
+                    document.getElementById('step-chat').innerHTML = `<div class="error-card"><h2>Service indisponible</h2><p>${data.error}</p></div>`;
                     return;
                 }
-                // Afficher les reponses dans le chat
                 currentQuestions.forEach((q, i) => {
                     addMsg('Toi', q + ' ' + answers[i]);
                 });
                 if (data.done) {
-                    addMsg('Credo IA', 'Parfait. J\'ai assez d\'informations pour evaluer ton profil.');
-                    document.getElementById('step-upload').classList.remove('hidden');
-                    document.getElementById('btn-result').classList.remove('hidden');
-                    document.getElementById('input-area').classList.add('hidden');
+                    addMsg('Credo IA', 'Parfait. J\'ai assez d\'informations pour évaluer ton profil.');
+                    document.getElementById('step-upload').classList.remove('step-hidden');
+                    document.getElementById('step-upload').classList.add('step-visible');
+                    document.getElementById('btn-result').classList.remove('step-hidden');
+                    document.getElementById('input-area').classList.add('step-hidden');
                 } else {
                     addMsg('Credo IA', data.question);
-                    // Restaurer input normal pour clarification
                     const area = document.getElementById('input-area');
-                    area.innerHTML = `<div class="flex gap-2"><input type="text" id="chat-input" class="flex-1 border rounded-xl p-3.5" placeholder="Ecris ta reponse..." onkeypress="if(event.key==='Enter') sendClarification()"><button onclick="sendClarification()" class="bg-indigo-600 text-white px-6 rounded-xl hover:bg-indigo-700 font-semibold">Envoyer</button></div>`;
+                    area.innerHTML = `<div class="input-row"><input type="text" id="chat-input" placeholder="Écris ta réponse..." onkeypress="if(event.key==='Enter') sendClarification()"><button onclick="sendClarification()">Envoyer</button></div>`;
                     document.getElementById('chat-input').focus();
                 }
             });
@@ -212,22 +738,30 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({answer: txt})
-            }).then(r => r.json()).then(data => {
+            }).then(r => {
+                if (r.status === 404) {
+                    document.getElementById('step-chat').innerHTML = `<div class="error-card"><h2>Session expirée</h2><p>Ta session a expiré. <a href="/chat/new" style="color:var(--amber-deep)">Recommence ici</a>.</p></div>`;
+                    return null;
+                }
+                return r.json();
+            }).then(data => {
+                if (!data) return;
                 if (data.error) {
-                    document.getElementById('step-chat').innerHTML = `<div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center"><h2 class="text-xl font-bold text-red-700 mb-2">Service indisponible</h2><p class="text-red-600">${data.error}</p></div>`;
+                    document.getElementById('step-chat').innerHTML = `<div class="error-card"><h2>Service indisponible</h2><p>${data.error}</p></div>`;
                     return;
                 }
                 if (data.type === 'questionnaire') {
-                    addMsg('Credo IA', 'Merci. Voici un questionnaire personnalise pour evaluer ton profil :');
+                    addMsg('Credo IA', 'Merci. Voici un questionnaire personnalisé pour évaluer ton profil :');
                     renderQuestionnaire(data.questions);
                     inp.disabled = false;
                     return;
                 }
                 if (data.done) {
-                    addMsg('Credo IA', 'Parfait. J\'ai assez d\'informations pour evaluer ton profil.');
-                    document.getElementById('step-upload').classList.remove('hidden');
-                    document.getElementById('btn-result').classList.remove('hidden');
-                    document.getElementById('input-area').classList.add('hidden');
+                    addMsg('Credo IA', 'Parfait. J\'ai assez d\'informations pour évaluer ton profil.');
+                    document.getElementById('step-upload').classList.remove('step-hidden');
+                    document.getElementById('step-upload').classList.add('step-visible');
+                    document.getElementById('btn-result').classList.remove('step-hidden');
+                    document.getElementById('input-area').classList.add('step-hidden');
                 } else {
                     addMsg('Credo IA', data.question);
                     updateProgress(questionCount + 1);
@@ -246,8 +780,6 @@
             sendMsg();
         }
 
-        let filesUploaded = 0;
-
         function uploadFiles(input) {
             const list = document.getElementById('file-list');
             Array.from(input.files).forEach(f => {
@@ -257,7 +789,7 @@
                 fetch(`/api/documents/upload/${sessionId}`, {method: 'POST', body: formData})
                 .then(r => r.json()).then(() => {
                     filesUploaded++;
-                    list.innerHTML += `<div class="text-sm text-green-600 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>${f.name}</div>`;
+                    list.innerHTML += `<div class="file-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>${f.name}</div>`;
                 });
             });
         }
@@ -269,11 +801,13 @@
             fetch(`/api/chat/${sessionId}/analyze`, {method: 'POST'})
             .then(r => r.json()).then(d => {
                 if (d.error) {
-                    document.getElementById('step-chat').innerHTML = `<div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center"><h2 class="text-xl font-bold text-red-700 mb-2">Service indisponible</h2><p class="text-red-600">${d.error}</p></div>`;
+                    document.getElementById('step-chat').innerHTML = `<div class="error-card"><h2>Service indisponible</h2><p>${d.error}</p></div>`;
                     return;
                 }
-                document.getElementById('step-chat').classList.add('hidden');
-                document.getElementById('step-result').classList.remove('hidden');
+                document.getElementById('step-chat').classList.remove('step-visible');
+                document.getElementById('step-chat').classList.add('step-hidden');
+                document.getElementById('step-result').classList.remove('step-hidden');
+                document.getElementById('step-result').classList.add('step-visible');
                 showResult(d);
             });
         });
@@ -281,81 +815,94 @@
         function showResult(d) {
             const r = document.getElementById('result-content');
             const partnersHtml = d.partners.map(p =>
-                `<div class="border rounded-xl p-4 flex justify-between items-center hover:border-indigo-200 transition-colors">
-                    <div><p class="font-medium">${p.name}</p><p class="text-sm text-gray-500">${p.reason || 'Partenaire recommande'}</p></div>
-                    <div class="text-right"><p class="font-bold text-indigo-600">${p.amount.toLocaleString()} FCFA</p><p class="text-xs text-gray-400">Taux des ${p.rate}</p></div>
+                `<div class="partner-card">
+                    <div>
+                        <div class="partner-name">${p.name}</div>
+                        <div class="partner-reason">${p.reason || 'Partenaire recommandé'}</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div class="partner-amount">${p.amount.toLocaleString()} FCFA</div>
+                        <div class="partner-rate">Taux dès ${p.rate}</div>
+                    </div>
                 </div>`
             ).join('');
 
-            const tipsHtml = d.tips.map(t => `<li class="flex items-start gap-2"><svg class="w-5 h-5 text-yellow-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg><span class="text-gray-600 text-sm">${t}</span></li>`).join('');
+            const tipsHtml = d.tips.map(t =>
+                `<li>
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                    <span>${t}</span>
+                </li>`
+            ).join('');
 
             r.innerHTML = `
-                ${d.analysis ? `
-                <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-6 text-sm text-gray-700 leading-relaxed">
-                    <p>${d.analysis}</p>
-                </div>` : ''}
+                ${d.analysis ? `<div class="analysis-text">${d.analysis}</div>` : ''}
 
-                <div class="text-center p-6 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl mb-6">
-                    <div class="text-6xl font-extrabold text-indigo-600 mb-2">${d.score}<span class="text-2xl text-gray-400">/1000</span></div>
-                    <p class="text-lg font-medium">Risque <span class="${d.risk==='Faible'?'text-green-600':d.risk==='Moyen'?'text-orange-600':'text-red-600'}">${d.risk}</span></p>
+                <div class="score-block">
+                    <div>
+                        <span class="score-number">${d.score}</span><span class="score-unit">/1000</span>
+                    </div>
+                    <div class="score-risk">
+                        Risque <span class="${d.risk==='Faible'?'low':d.risk==='Moyen'?'medium':'high'}">${d.risk}</span>
+                    </div>
                 </div>
 
-                <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
-                    <p class="text-sm text-green-700 font-medium">Montant maximum estime</p>
-                    <p class="text-3xl font-bold text-green-700">${d.max_amount.toLocaleString()} FCFA</p>
+                <div class="amount-block">
+                    <div class="amount-label">Montant maximum estimé</div>
+                    <div class="amount-value">${d.max_amount.toLocaleString()} FCFA</div>
                 </div>
 
                 ${d.code ? `
-                <div class="bg-indigo-600 text-white rounded-xl p-5 mb-6 text-center">
-                    <p class="text-sm text-indigo-200">Ton code de mise en contact</p>
-                    <p class="text-4xl font-bold tracking-widest mt-1 select-all">${d.code}</p>
-                    <p class="text-xs text-indigo-200 mt-2">Presente ce code a ton institution partenaire</p>
+                <div class="code-block">
+                    <div class="code-label">Ton code de mise en contact</div>
+                    <div class="code-value">${d.code}</div>
+                    <div class="code-hint">Présente ce code à ton institution partenaire</div>
                 </div>
 
-                <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6">
-                    <p class="font-semibold text-sm mb-3">Message WhatsApp a envoyer au partenaire :</p>
-                    <div class="bg-white rounded-lg p-4 text-sm text-gray-700 border mb-3 select-all" id="msg-template">
+                <div class="whatsapp-block">
+                    <p>Message WhatsApp à envoyer au partenaire :</p>
+                    <div class="whatsapp-template">
 Bonjour,
 
-Je viens de la part de Credo (courtier credit IA).
+Je viens de la part de Credo (courtier crédit IA).
 Mon code de mise en contact : ${d.code}
 
-Mon score de solvabilite : ${d.score}/1000
-Montant estime : ${(d.max_amount || 0).toLocaleString()} FCFA
+Mon score de solvabilité : ${d.score}/1000
+Montant estimé : ${(d.max_amount || 0).toLocaleString()} FCFA
 Risque : ${d.risk}
 
-Je suis interesse par un pret et je souhaite etre contacte.
+Je suis intéressé par un prêt et je souhaite être contacté.
 
 Merci.
                     </div>
-                    <a href="https://wa.me/?text=${encodeURIComponent('Bonjour, je viens de la part de Credo. Mon code: ' + d.code + '. Score: ' + d.score + '/1000. Je suis interesse par un pret.')}" target="_blank" class="inline-flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                    <a href="https://wa.me/?text=${encodeURIComponent('Bonjour, je viens de la part de Credo. Mon code: ' + d.code + '. Score: ' + d.score + '/1000. Je suis intéressé par un prêt.')}" target="_blank" class="btn btn-success btn-sm" style="width:auto;display:inline-flex;align-items:center;gap:0.5rem">
+                        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                         Ouvrir WhatsApp
                     </a>
                 </div>` : ''}
 
-                ${!d.code ? `
-                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
-                    <p class="text-sm text-yellow-800 font-medium">Pour obtenir un code de mise en contact et un suivi personnalise, choisis l'offre a 5,000 FCFA.</p>
-                </div>` : ''}
+                ${!d.code ? `<div class="banner-upgrade">Pour obtenir un code de mise en contact et un suivi personnalisé, choisis l'offre à 5,000 FCFA.</div>` : ''}
 
-                <div class="mb-6">
-                    <p class="font-semibold mb-3">Institutions recommandees :</p>
+                <div class="partner-list">
+                    <h3>Institutions recommandées</h3>
                     ${partnersHtml}
                 </div>
 
                 ${d.missing_documents && d.missing_documents.length ? `
-                <div class="bg-yellow-50 border rounded-xl p-4 mb-6">
-                    <p class="font-semibold text-sm mb-2">Documents a preparer :</p>
-                    <ul class="space-y-1">${d.missing_documents.map(doc => `<li class="text-sm text-yellow-700 flex items-center gap-2"><span class="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>${doc}</li>`).join('')}</ul>
+                <div class="doc-list">
+                    <h4>Documents à préparer</h4>
+                    <ul>${d.missing_documents.map(doc => `<li>${doc}</li>`).join('')}</ul>
                 </div>` : ''}
 
-                <div class="bg-gray-50 rounded-xl p-4 mb-6">
-                    <p class="font-semibold text-sm mb-2">Conseils pour ameliorer ton score :</p>
-                    <ul class="space-y-2">${tipsHtml}</ul>
+                <div class="tips-block">
+                    <h4>Conseils pour améliorer ton score</h4>
+                    <ul>${tipsHtml}</ul>
                 </div>
 
-                <button onclick="window.print()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors">Telecharger mon rapport PDF</button>
+                <button onclick="window.print()" class="btn btn-primary" style="margin-top:0.5rem">
+                    Télécharger mon rapport PDF
+                </button>
             `;
         }
     </script>

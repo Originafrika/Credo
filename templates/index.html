@@ -3,179 +3,516 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Credo  -  Vérifie ta solvabilité en 5 min</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>Credo — Vérifie ta solvabilité en 5 minutes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;500;600&display=swap" rel="stylesheet">
     <style>
-        * { font-family: 'Inter', sans-serif; }
-        .gradient-hero { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%); }
-        .card-hover { transition: all 0.2s ease; }
-        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
-        .step-circle { transition: all 0.3s ease; }
-        .step-card:hover .step-circle { transform: scale(1.1); }
+        :root {
+            --amber: oklch(0.68 0.18 75);
+            --amber-deep: oklch(0.55 0.2 75);
+            --amber-light: oklch(0.92 0.06 75);
+            --amber-bg: oklch(0.97 0.015 75);
+            --teal: oklch(0.55 0.12 195);
+            --teal-light: oklch(0.92 0.04 195);
+            --surface: oklch(0.99 0.003 75);
+            --cream: oklch(0.975 0.008 75);
+            --charcoal: oklch(0.15 0.01 60);
+            --gray-mid: oklch(0.5 0.01 60);
+            --gray-light: oklch(0.85 0.01 60);
+            --success: oklch(0.62 0.18 145);
+            --success-bg: oklch(0.93 0.06 145);
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-body: 'DM Sans', sans-serif;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+        body {
+            font-family: var(--font-body);
+            background: var(--cream);
+            color: var(--charcoal);
+            line-height: 1.6;
+        }
+        .container { max-width: 1040px; margin: 0 auto; padding: 0 1.5rem; }
+
+        /* Nav */
+        .nav {
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--gray-light);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 0.875rem;
+            padding-bottom: 0.875rem;
+        }
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+            text-decoration: none;
+        }
+        .nav-icon {
+            width: 32px; height: 32px;
+            background: var(--amber);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 0.875rem;
+        }
+        .nav-title {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 1.125rem;
+            color: var(--charcoal);
+        }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+        .nav-links a {
+            text-decoration: none;
+            color: var(--gray-mid);
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--charcoal); }
+        .nav-cta {
+            background: var(--amber);
+            color: white !important;
+            padding: 0.5rem 1.25rem;
+            border-radius: 8px;
+            font-weight: 600 !important;
+            transition: background 0.2s !important;
+        }
+        .nav-cta:hover { background: var(--amber-deep) !important; }
+        @media (max-width: 640px) {
+            .nav-links a:not(.nav-cta) { display: none; }
+        }
+
+        /* Hero */
+        .hero {
+            padding: 5rem 0 4rem;
+            text-align: center;
+        }
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--amber-light);
+            color: var(--amber-deep);
+            font-size: 0.8rem;
+            font-weight: 500;
+            padding: 0.35rem 1rem;
+            border-radius: 100px;
+            margin-bottom: 1.5rem;
+        }
+        .hero-badge span {
+            width: 8px; height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+        }
+        .hero h1 {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            line-height: 1.08;
+            letter-spacing: -0.02em;
+            margin-bottom: 1rem;
+        }
+        .hero h1 em {
+            font-style: normal;
+            color: var(--amber-deep);
+        }
+        .hero p {
+            font-size: 1.15rem;
+            color: var(--gray-mid);
+            max-width: 560px;
+            margin: 0 auto 2rem;
+            line-height: 1.65;
+        }
+        .hero-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-block;
+            text-decoration: none;
+            border-radius: 10px;
+            padding: 0.85rem 2rem;
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-primary {
+            background: var(--amber);
+            color: white;
+        }
+        .btn-primary:hover { background: var(--amber-deep); transform: translateY(-1px); }
+        .btn-outline {
+            background: transparent;
+            color: var(--charcoal);
+            border: 1.5px solid var(--gray-light);
+        }
+        .btn-outline:hover { border-color: var(--amber); }
+        .hero-stats {
+            display: flex;
+            gap: 3rem;
+            justify-content: center;
+            margin-top: 3.5rem;
+        }
+        .hero-stat { text-align: center; }
+        .hero-stat-num {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 2.25rem;
+            color: var(--amber-deep);
+        }
+        .hero-stat-label { font-size: 0.85rem; color: var(--gray-mid); margin-top: 0.15rem; }
+
+        /* Sections */
+        section { padding: 5rem 0; }
+        .section-title {
+            text-align: center;
+            margin-bottom: 3.5rem;
+        }
+        .section-title h2 {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 2.25rem;
+            letter-spacing: -0.01em;
+            margin-bottom: 0.5rem;
+        }
+        .section-title p { color: var(--gray-mid); font-size: 1.05rem; }
+
+        /* Steps */
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+        @media (max-width: 720px) { .steps-grid { grid-template-columns: 1fr; } }
+        .step-card {
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .step-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,0,0,0.06); }
+        .step-num {
+            width: 56px; height: 56px;
+            background: var(--amber-light);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.25rem;
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 1.5rem;
+            color: var(--amber-deep);
+        }
+        .step-card h3 {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+        }
+        .step-card p { font-size: 0.9rem; color: var(--gray-mid); line-height: 1.55; }
+
+        /* Pricing */
+        .pricing-bg { background: var(--surface); }
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+            max-width: 560px;
+            margin: 0 auto;
+        }
+        @media (max-width: 520px) { .pricing-grid { grid-template-columns: 1fr; } }
+        .pricing-card {
+            border: 1.5px solid var(--gray-light);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: border-color 0.2s, transform 0.2s;
+            position: relative;
+        }
+        .pricing-card:hover { border-color: var(--amber); transform: translateY(-2px); }
+        .pricing-card.featured {
+            border-color: var(--amber);
+            background: var(--amber-bg);
+        }
+        .pricing-popular {
+            position: absolute;
+            top: -0.75rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--amber);
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 1rem;
+            border-radius: 100px;
+        }
+        .pricing-name {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 0.25rem;
+        }
+        .pricing-desc { font-size: 0.85rem; color: var(--gray-mid); margin-bottom: 1rem; }
+        .pricing-price {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 2.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .pricing-price small {
+            font-size: 1rem;
+            font-weight: 400;
+            color: var(--gray-mid);
+        }
+        .pricing-features { list-style: none; margin-bottom: 1.5rem; }
+        .pricing-features li {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.625rem;
+            font-size: 0.85rem;
+            padding: 0.35rem 0;
+        }
+        .pricing-features li svg {
+            width: 18px; height: 18px;
+            color: var(--amber-deep);
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        /* FAQ */
+        .faq-list { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.75rem; }
+        .faq-item {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+        }
+        .faq-item h3 {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .faq-item p { font-size: 0.9rem; color: var(--gray-mid); line-height: 1.55; }
+
+        /* CTA */
+        .cta-section {
+            text-align: center;
+            padding: 5rem 1.5rem;
+            background: var(--charcoal);
+            color: white;
+        }
+        .cta-section h2 {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .cta-section p {
+            color: rgba(255,255,255,0.6);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Footer */
+        .footer {
+            background: var(--charcoal);
+            color: var(--gray-mid);
+            padding: 2.5rem 0;
+            border-top: 1px solid oklch(0.25 0.01 60);
+        }
+        .footer .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            text-align: center;
+        }
+        .footer-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .footer-brand .nav-icon { background: var(--amber-deep); }
+        .footer-brand span { color: white; font-family: var(--font-display); font-weight: 600; }
+        .footer p { font-size: 0.85rem; }
+        .footer p em { color: rgba(255,255,255,0.5); font-style: normal; }
     </style>
 </head>
-<body class="bg-gray-50">
-    <nav class="bg-white/80 backdrop-blur-sm border-b sticky top-0 z-50">
-        <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div class="flex items-center gap-2">
-                <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">C</div>
-                <span class="text-xl font-bold text-gray-900">Credo</span>
-            </div>
-            <div class="flex items-center gap-6">
-                <a href="#how" class="text-gray-600 hover:text-gray-900 text-sm font-medium">Fonctionnement</a>
-                <a href="#pricing" class="text-gray-600 hover:text-gray-900 text-sm font-medium">Tarifs</a>
-                <a href="#faq" class="text-gray-600 hover:text-gray-900 text-sm font-medium">FAQ</a>
-                <a href="/chat/new" class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors">Commencer</a>
+<body>
+    <nav class="nav">
+        <div class="container">
+            <a href="/" class="nav-brand">
+                <div class="nav-icon">C</div>
+                <span class="nav-title">Credo</span>
+            </a>
+            <div class="nav-links">
+                <a href="#how">Fonctionnement</a>
+                <a href="#pricing">Tarifs</a>
+                <a href="#faq">FAQ</a>
+                <a href="/chat/new" class="nav-cta">Commencer</a>
             </div>
         </div>
     </nav>
 
-    <section class="gradient-hero text-white">
-        <div class="max-w-5xl mx-auto px-6 py-24 text-center">
-            <div class="inline-flex items-center gap-2 bg-white/10 rounded-full px-4 py-1.5 text-sm mb-8">
-                <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+    <section class="hero">
+        <div class="container">
+            <div class="hero-badge">
+                <span></span>
                 Service disponible au Togo
             </div>
-            <h1 class="text-5xl md:text-7xl font-extrabold leading-tight mb-6">
-                Vérifie ta solvabilité<br>
-                <span class="text-indigo-300">en 5 minutes</span>
-            </h1>
-            <p class="text-xl text-indigo-200 max-w-2xl mx-auto mb-10 leading-relaxed">
-                Découvre ton montant exact, l'institution partenaire idéale et les documents à fournir  -  sans te déplacer.
-            </p>
-            <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                <a href="/chat/new" class="bg-white text-indigo-700 px-8 py-4 rounded-xl text-lg font-bold hover:bg-indigo-50 transition-colors shadow-xl">
-                    Vérifier ma solvabilité
-                </a>
-                <a href="#how" class="border border-white/30 text-white px-8 py-4 rounded-xl text-lg font-semibold hover:bg-white/10 transition-colors">
-                    Comment ça marche
-                </a>
+            <h1>Vérifie ta solvabilité<br><em>en 5 minutes</em></h1>
+            <p>Découvre ton montant exact, l'institution partenaire idéale et les documents à fournir — sans te déplacer.</p>
+            <div class="hero-actions">
+                <a href="/chat/new" class="btn btn-primary">Vérifier ma solvabilité</a>
+                <a href="#how" class="btn btn-outline">Comment ça marche</a>
             </div>
-            <div class="mt-16 grid grid-cols-3 gap-8 max-w-lg mx-auto text-center">
-                <div><div class="text-3xl font-bold text-indigo-300">5 min</div><div class="text-sm text-indigo-200 mt-1">Temps d'analyse</div></div>
-                <div><div class="text-3xl font-bold text-indigo-300">8+</div><div class="text-sm text-indigo-200 mt-1">Partenaires</div></div>
-                <div><div class="text-3xl font-bold text-indigo-300">0</div><div class="text-sm text-indigo-200 mt-1">Déplacement</div></div>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="hero-stat-num">5 min</div>
+                    <div class="hero-stat-label">Temps d'analyse</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="hero-stat-num">8+</div>
+                    <div class="hero-stat-label">Partenaires</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="hero-stat-num">0</div>
+                    <div class="hero-stat-label">Déplacement</div>
+                </div>
             </div>
         </div>
     </section>
 
-    <section id="how" class="max-w-5xl mx-auto px-6 py-24">
-        <div class="text-center mb-16">
-            <h2 class="text-4xl font-bold text-gray-900 mb-4">Comment ça marche</h2>
-            <p class="text-lg text-gray-500">Trois étapes simples pour connaître ta situation</p>
-        </div>
-        <div class="grid md:grid-cols-3 gap-8">
-            <div class="step-card text-center p-8 rounded-2xl bg-white shadow-sm border">
-                <div class="step-circle w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                    <span class="text-2xl font-bold text-indigo-600">1</span>
-                </div>
-                <h3 class="text-xl font-bold mb-3 text-gray-900">Tu choisis ton offre</h3>
-                <p class="text-gray-500 leading-relaxed">Rapport Simple (2,500 FCFA) ou Complet (5,000 FCFA). Paiement sécurisé via Mobile Money.</p>
+    <section id="how">
+        <div class="container">
+            <div class="section-title">
+                <h2>Comment ça marche</h2>
+                <p>Trois étapes simples pour connaître ta situation</p>
             </div>
-            <div class="step-card text-center p-8 rounded-2xl bg-white shadow-sm border">
-                <div class="step-circle w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                    <span class="text-2xl font-bold text-indigo-600">2</span>
+            <div class="steps-grid">
+                <div class="step-card">
+                    <div class="step-num">1</div>
+                    <h3>Tu choisis ton offre</h3>
+                    <p>Rapport Simple (2,500 FCFA) ou Complet (5,000 FCFA). Paiement sécurisé via Mobile Money.</p>
                 </div>
-                <h3 class="text-xl font-bold mb-3 text-gray-900">L'IA analyse ton profil</h3>
-                <p class="text-gray-500 leading-relaxed">Tu réponds à quelques questions. Tu peux ajouter tes documents pour plus de précision.</p>
-            </div>
-            <div class="step-card text-center p-8 rounded-2xl bg-white shadow-sm border">
-                <div class="step-circle w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                    <span class="text-2xl font-bold text-indigo-600">3</span>
+                <div class="step-card">
+                    <div class="step-num">2</div>
+                    <h3>L'IA analyse ton profil</h3>
+                    <p>Tu réponds à quelques questions. Tu peux ajouter tes documents pour plus de précision.</p>
                 </div>
-                <h3 class="text-xl font-bold mb-3 text-gray-900">Tu reçois ton résultat</h3>
-                <p class="text-gray-500 leading-relaxed">Score, montant maximum, institution recommandée et conseils personnalisés.</p>
+                <div class="step-card">
+                    <div class="step-num">3</div>
+                    <h3>Tu reçois ton résultat</h3>
+                    <p>Score, montant maximum, institution recommandée et conseils personnalisés.</p>
+                </div>
             </div>
         </div>
     </section>
 
-    <section id="pricing" class="bg-white py-24">
-        <div class="max-w-4xl mx-auto px-6">
-            <div class="text-center mb-16">
-                <h2 class="text-4xl font-bold text-gray-900 mb-4">Des tarifs transparents</h2>
-                <p class="text-lg text-gray-500">Pas d'abonnement, pas de surprise. Tu paies une seule fois.</p>
+    <section id="pricing" class="pricing-bg">
+        <div class="container">
+            <div class="section-title">
+                <h2>Des tarifs transparents</h2>
+                <p>Pas d'abonnement, pas de surprise. Tu paies une seule fois.</p>
             </div>
-            <div class="grid md:grid-cols-2 gap-8 max-w-2xl mx-auto">
-                <div class="card-hover border-2 border-gray-200 rounded-2xl p-8">
-                    <h3 class="text-xl font-bold text-gray-900 mb-2">Rapport Simple</h3>
-                    <p class="text-gray-500 text-sm mb-6">L'essentiel pour savoir où tu en es</p>
-                    <div class="text-5xl font-extrabold text-gray-900 mb-6">2,500 <span class="text-2xl">FCFA</span></div>
-                    <ul class="space-y-3 mb-8">
-                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-600">Score de solvabilité</span></li>
-                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-600">Montant estimé</span></li>
-                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-600">Institution recommandée</span></li>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <div class="pricing-name">Rapport Simple</div>
+                    <div class="pricing-desc">L'essentiel pour savoir où tu en es</div>
+                    <div class="pricing-price">2,500 <small>FCFA</small></div>
+                    <ul class="pricing-features">
+                        <li><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Score de solvabilité</li>
+                        <li><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Montant estimé</li>
+                        <li><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Institution recommandée</li>
                     </ul>
-                    <a href="/chat/new" class="block w-full border-2 border-indigo-600 text-indigo-600 text-center py-3.5 rounded-xl font-bold hover:bg-indigo-50 transition-colors">Choisir</a>
+                    <a href="/chat/new" class="btn btn-outline" style="width:100%;text-align:center">Choisir</a>
                 </div>
-                <div class="card-hover border-2 border-indigo-600 rounded-2xl p-8 relative bg-white">
-                    <div class="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-6 py-1 rounded-full text-sm font-medium">Populaire</div>
-                    <h3 class="text-xl font-bold text-gray-900 mb-2">Rapport Complet</h3>
-                    <p class="text-gray-500 text-sm mb-6">L'analyse la plus complète pour maximiser tes chances</p>
-                    <div class="text-5xl font-extrabold text-gray-900 mb-6">5,000 <span class="text-2xl">FCFA</span></div>
-                    <ul class="space-y-3 mb-8">
-                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-600">Tout le Rapport Simple</span></li>
-                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-600">Documents manquants identifiés</span></li>
-                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-600">Conseils personnalisés</span></li>
-                        <li class="flex items-start gap-3"><svg class="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-600">Suivi de dossier prioritaire</span></li>
+                <div class="pricing-card featured">
+                    <div class="pricing-popular">Recommandé</div>
+                    <div class="pricing-name">Rapport Complet</div>
+                    <div class="pricing-desc">L'analyse la plus complète</div>
+                    <div class="pricing-price">5,000 <small>FCFA</small></div>
+                    <ul class="pricing-features">
+                        <li><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Tout le Rapport Simple</li>
+                        <li><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Documents manquants identifiés</li>
+                        <li><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Conseils personnalisés</li>
+                        <li><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Mise en contact partenaire</li>
                     </ul>
-                    <a href="/chat/new" class="block w-full bg-indigo-600 text-white text-center py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors">Choisir</a>
+                    <a href="/chat/new" class="btn btn-primary" style="width:100%;text-align:center">Choisir</a>
                 </div>
             </div>
         </div>
     </section>
 
-    <section id="faq" class="max-w-3xl mx-auto px-6 py-24">
-        <div class="text-center mb-16">
-            <h2 class="text-4xl font-bold text-gray-900 mb-4">Questions fréquentes</h2>
-        </div>
-        <div class="space-y-4">
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 class="font-semibold text-gray-900 text-lg">C'est quoi Credo ?</h3>
-                <p class="text-gray-500 mt-3 leading-relaxed">Credo est un courtier crédit intelligent. Tu nous parles de toi, on analyse ta situation et on te dit exactement combien tu peux emprunter, auprès de quelle institution, et ce qu'il faut pour obtenir plus.</p>
+    <section id="faq">
+        <div class="container">
+            <div class="section-title">
+                <h2>Questions fréquentes</h2>
             </div>
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 class="font-semibold text-gray-900 text-lg">C'est gratuit ?</h3>
-                <p class="text-gray-500 mt-3 leading-relaxed">Non. Le service est payant à partir de 2,500 FCFA. Pas de chat gratuit, pas de démo bidon. Tu paies, tu obtiens ton diagnostic réel.</p>
-            </div>
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 class="font-semibold text-gray-900 text-lg">Je dois me déplacer ?</h3>
-                <p class="text-gray-500 mt-3 leading-relaxed">Jamais. Tout se fait en ligne : paiement par Mobile Money, chat avec l'IA, upload de documents et réception du rapport.</p>
-            </div>
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 class="font-semibold text-gray-900 text-lg">Je suis informel, ça marche pour moi ?</h3>
-                <p class="text-gray-500 mt-3 leading-relaxed">Credo est fait pour toi. Notre IA est conçue pour évaluer les profils sans fiche de paie ni relevé bancaire. L'informel est notre spécialité.</p>
-            </div>
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 class="font-semibold text-gray-900 text-lg">Et si je ne suis pas solvable ?</h3>
-                <p class="text-gray-500 mt-3 leading-relaxed">Tu sauras exactement pourquoi et ce qu'il faut améliorer. Personne ne te donne ce niveau de clarté gratuitement  -  et ici c'est payant, donc c'est précis.</p>
-            </div>
-        </div>
-    </section>
-
-    <section class="gradient-hero text-white">
-        <div class="max-w-3xl mx-auto px-6 py-20 text-center">
-            <h2 class="text-4xl font-extrabold mb-6">Prêt à connaître ta solvabilité ?</h2>
-            <p class="text-xl text-indigo-200 mb-10">5 minutes. 2,500 FCFA. Zéro déplacement.</p>
-            <a href="/chat/new" class="inline-block bg-white text-indigo-700 px-10 py-4 rounded-xl text-lg font-bold hover:bg-indigo-50 transition-colors shadow-xl">
-                Commencer maintenant
-            </a>
-        </div>
-    </section>
-
-    <footer class="bg-gray-900 text-gray-400 py-12">
-        <div class="max-w-6xl mx-auto px-6">
-            <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
-                <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">C</div>
-                    <span class="text-lg font-bold text-white">Credo</span>
+            <div class="faq-list">
+                <div class="faq-item">
+                    <h3>C'est quoi Credo ?</h3>
+                    <p>Credo est un courtier crédit intelligent. Tu nous parles de toi, on analyse ta situation et on te dit exactement combien tu peux emprunter, auprès de quelle institution, et ce qu'il faut pour obtenir plus.</p>
                 </div>
-                <div class="text-sm">Une solution <span class="text-white font-medium">Origin SARL</span></div>
+                <div class="faq-item">
+                    <h3>C'est gratuit ?</h3>
+                    <p>Non. Le service est payant à partir de 2,500 FCFA. Pas de chat gratuit, pas de démo bidon. Tu paies, tu obtiens ton diagnostic réel.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>Je dois me déplacer ?</h3>
+                    <p>Jamais. Tout se fait en ligne : paiement par Mobile Money, chat avec l'IA, upload de documents et réception du rapport.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>Je suis informel, ça marche pour moi ?</h3>
+                    <p>Credo est fait pour toi. Notre IA est conçue pour évaluer les profils sans fiche de paie ni relevé bancaire. L'informel est notre spécialité.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>Et si je ne suis pas solvable ?</h3>
+                    <p>Tu sauras exactement pourquoi et ce qu'il faut améliorer. Personne ne te donne ce niveau de clarté gratuitement — et ici c'est payant, donc c'est précis.</p>
+                </div>
             </div>
-            <div class="border-t border-gray-800 pt-8 text-center text-sm">
-                <p>&copy; 2026 Origin SARL. Tous droits réservés.</p>
-                <p class="mt-2">Lomé, Togo  -  Courtier crédit IA pour l'inclusion financière.</p>
+        </div>
+    </section>
+
+    <section class="cta-section">
+        <h2>Prêt à connaître ta solvabilité ?</h2>
+        <p>5 minutes. 2,500 FCFA. Zéro déplacement.</p>
+        <a href="/chat/new" class="btn btn-primary" style="background:var(--amber);color:white;box-shadow:0 8px 24px rgba(0,0,0,0.2)">Commencer maintenant</a>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-brand">
+                <div class="nav-icon">C</div>
+                <span>Credo</span>
             </div>
+            <p>Une solution <em>Origin SARL</em></p>
+            <p>&copy; 2026 Origin SARL. Tous droits réservés.</p>
+            <p>Lomé, Togo — Courtier crédit IA pour l'inclusion financière.</p>
         </div>
     </footer>
 </body>
