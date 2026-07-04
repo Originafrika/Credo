@@ -67,15 +67,26 @@ def init_db():
         db_execute(conn, "DELETE FROM sessions WHERE status = 'completed'")
     except Exception:
         pass
-    # Migrate: ensure questionnaire + question_idx exist (for tables created before these columns were added)
-    try:
-        db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS questionnaire TEXT")
-        db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS question_idx INTEGER DEFAULT 0")
-    except Exception:
-        pass
     db_close(conn)
 
 init_db()
+
+_migrated = False
+
+@app.before_request
+def ensure_migration():
+    global _migrated
+    if _migrated:
+        return
+    try:
+        conn = get_db()
+        db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS questionnaire TEXT")
+        db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS question_idx INTEGER DEFAULT 0")
+        db_close(conn)
+        _migrated = True
+        print("[CREDO] migration ok", flush=True)
+    except Exception as e:
+        print(f"[CREDO] migration failed: {e}", flush=True)
 
 # ── Routes ──
 
