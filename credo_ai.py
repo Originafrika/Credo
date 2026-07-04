@@ -19,13 +19,15 @@ NEON_DSN = os.environ.get("NEON_DSN", "")
 # NEON DB — query real partner data at scoring time
 # ==============================================================
 
-def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> list[dict]:
-    """LLM querie la DB au moment du scoring pour obtenir les vrais partenaires."""
+def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> tuple[list[dict], list[dict], list[dict]]:
+    """LLM querie la DB au moment du scoring: partenaires + produits + regles metier."""
     if not NEON_DSN:
-        return []
+        return [], [], []
     try:
         conn = psycopg2.connect(NEON_DSN)
         cur = conn.cursor()
+
+        # query partners
         sectors = ['commerce', 'agriculture', 'service', 'artisanat']
         if sector_hint:
             for s in sectors:
@@ -33,7 +35,7 @@ def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> li
                     sectors = [s]
                     break
         cur.execute(
-            """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate
+            """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
                FROM partners
                WHERE countries @> ARRAY[%s]::TEXT[]
                  AND min_amount <= %s
@@ -45,26 +47,48 @@ def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> li
                LIMIT 12""",
             (country, amount, amount, amount)
         )
-        rows = cur.fetchall()
+        partners = []
+        partner_ids = []
+        for r in cur.fetchall():
+            partners.append({
+                "name": r[0], "type": r[1], "min_amount": r[2], "max_amount": r[3],
+                "rate": r[4], "sectors": r[5], "docs": r[6], "description": r[7],
+                "base_rate": r[8], "max_rate": r[9],
+            })
+            partner_ids.append(r[10])
+
+        # query products for matching partners
+        products = []
+        if partner_ids:
+            cur.execute(
+                """SELECT p.name AS partner_name, pr.name, pr.min_amount, pr.max_amount,
+                          pr.min_duration_months, pr.max_duration_months, pr.annual_rate,
+                          pr.collateral_required, pr.requirements, pr.description
+                   FROM products pr JOIN partners p ON p.id = pr.partner_id
+                   WHERE pr.partner_id = ANY(%s)
+                     AND pr.max_amount >= %s
+                   ORDER BY pr.annual_rate ASC""",
+                (partner_ids, amount)
+            )
+            for r in cur.fetchall():
+                products.append({
+                    "partner": r[0], "product": r[1], "min_amount": r[2], "max_amount": r[3],
+                    "min_duration": r[4], "max_duration": r[5], "annual_rate": r[6],
+                    "collateral_required": r[7], "requirements": r[8], "description": r[9],
+                })
+
+        # query relevant knowledge base rules
+        cur.execute(
+            """SELECT category, title, content FROM knowledge_base ORDER BY category LIMIT 20"""
+        )
+        rules = [{"category": r[0], "title": r[1], "content": r[2]} for r in cur.fetchall()]
+
         conn.close()
-        return [
-            {
-                "name": r[0],
-                "type": r[1],
-                "min_amount": r[2],
-                "max_amount": r[3],
-                "rate": r[4],
-                "sectors": r[5],
-                "docs": r[6],
-                "description": r[7],
-                "base_rate": r[8],
-                "max_rate": r[9],
-            }
-            for r in rows
-        ]
+        return partners, products, rules
+
     except Exception as e:
         _log(f"Neon query failed: {e}")
-        return []
+        return [], [], []
 
 # ==============================================================
 # HELPERS
@@ -181,11 +205,21 @@ def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral
         elif any(w in r for w in ["artisan", "atelier", "couture"]):
             sector_hint = "artisanat"
 
-    partners = _get_partners(realistic_max, sector_hint)
+    partners, products, rules = _get_partners(realistic_max, sector_hint)
     partners_str = "\n".join(
-        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}, secteurs: {', '.join(p['sectors'])}"
+        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}"
         for p in partners
-    ) if partners else "Aucun partenaire trouve dans la base. Recommande des institutions microfinance generalistes."
+    ) if partners else "Aucun partenaire trouve dans la base."
+
+    products_str = "\n".join(
+        f"- {pr['product']} ({pr['partner']}): {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%"
+        for pr in products[:8]
+    ) if products else ""
+
+    rules_str = "\n".join(
+        f"  [{r['category']}] {r['title']}: {r['content']}"
+        for r in rules[:6]
+    ) if rules else ""
 
     return f"""Tu es un analyste de credit pour le marche UEMOA. Evalue CE profil precis.
 
@@ -197,16 +231,21 @@ Montant demande: {wanted} FCFA
 Collateral: {"oui" if collateral else "non"}
 Montant realiste max (calcule): {realistic_max} FCFA
 
-Partenaires disponibles dans la base (donnees fraiches):
+--- PARTENAIRES DISPONIBLES (base de donnees) ---
 {partners_str}
 
-Tu es STRICT:
-- Jamais de pret > 6x le revenu mensuel sans collaterale
-- Jamais de pret > 24x avec collaterale solide
+--- PRODUITS DE CREDIT ---
+{products_str}
+
+--- REGLES METIER ---
+{rules_str}
+
+Instructions:
 - Si le montant demande est irrealiste, explique-le dans analysis
 - Le marche informel est normal en Afrique, ce n'est pas un risque
-- Un score bas avec explication honnete vaut mieux qu'un faux espoir
-- Choisis les partenaires PARMI la liste ci-dessus — ne pas en inventer
+- Choisis TOUJOURS les partenaires parmi la liste ci-dessus — ne pas en inventer
+- Associe chaque partenaire recommande a un produit specifique de sa gamme
+- Prefere les microfinances aux banques pour les petits montants (<1MF)
 
 Retourne CE JSON:
 {{
@@ -215,7 +254,7 @@ Retourne CE JSON:
   "max_amount": 500000,
   "analysis": "2-3 phrases expliquant le verdict honnetement",
   "recommended_partners": [
-    {{"name": "Institution", "amount": 300000, "rate": "12%", "reason": "Pourquoi ce partenaire"}}
+    {{"name": "Institution", "product": "Nom produit", "amount": 300000, "rate": "12%", "reason": "Pourquoi ce partenaire et ce produit"}}
   ],
   "missing_documents": ["piece_identite"],
   "improvement_tips": ["Conseil 1"],
