@@ -565,6 +565,24 @@ def _extract_has_collateral(answers: list[dict]) -> bool:
     return False
 
 
+def _extract_country(answers: list[dict]) -> str:
+    text = " ".join(a.get("a", "") for a in answers).lower()
+    mapping = {
+        "tg": ["togo", "lome", "lom\u00e9"],
+        "bj": ["benin", "cotonou", "porto-novo"],
+        "ci": ["c\u00f4te d'ivoire", "cote d'ivoire", "abidjan", "bouak\u00e9", "bouake", "yamoussoukro"],
+        "sn": ["senegal", "dakar", "saint-louis"],
+        "ml": ["mali", "bamako"],
+        "bf": ["burkina", "ouagadougou", "bobo-dioulasso"],
+        "ne": ["niger", "niamey"],
+        "gw": ["guin\u00e9e-bissau", "guinee-bissau", "bissau"],
+    }
+    for code, keywords in mapping.items():
+        if any(kw in text for kw in keywords):
+            return code
+    return "TG"
+
+
 def _extract_business_registration(answers: list[dict]) -> bool:
     for a in answers:
         r = (a.get("a") or "").lower()
@@ -575,7 +593,8 @@ def _extract_business_registration(answers: list[dict]) -> bool:
 
 
 def build_comparison_report(answers: list[dict]) -> dict:
-    partners, products = _get_all_partners()
+    country = _extract_country(answers)
+    partners, products = _get_all_partners(country)
     monthly_income = _estimate_monthly_revenue(answers)
     amount_wanted = _extract_amount_wanted("", answers)
     sector = _extract_sector(answers)
