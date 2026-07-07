@@ -53,10 +53,13 @@ def db_close(conn):
 def init_db():
     conn = get_db()
     for sql in [
-        "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, phone TEXT, plan TEXT DEFAULT '5000', status TEXT DEFAULT 'payment_wait', code TEXT, payment_ref TEXT, payment_verified INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), completed_at TEXT, questionnaire TEXT, question_idx INTEGER DEFAULT 0)",
-        "CREATE TABLE IF NOT EXISTS messages (id SERIAL PRIMARY KEY, session_id TEXT, role TEXT, question TEXT, answer TEXT, created_at TEXT DEFAULT NOW())",
-        "CREATE TABLE IF NOT EXISTS documents (id SERIAL PRIMARY KEY, session_id TEXT, doc_type TEXT, storage_url TEXT, extracted_json TEXT, created_at TEXT DEFAULT NOW())",
-        "CREATE TABLE IF NOT EXISTS results (id SERIAL PRIMARY KEY, session_id TEXT UNIQUE, score INTEGER, risk TEXT, max_amount INTEGER, partners TEXT, missing_docs TEXT, tips TEXT, code TEXT UNIQUE, loan_amount INTEGER, analysis TEXT, created_at TEXT DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, phone TEXT, plan TEXT DEFAULT '5000', status TEXT DEFAULT 'payment_wait', code TEXT, payment_ref TEXT, payment_verified INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), completed_at TIMESTAMPTZ, questionnaire TEXT, question_idx INTEGER DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS messages (id SERIAL PRIMARY KEY, session_id TEXT, role TEXT, question TEXT, answer TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS documents (id SERIAL PRIMARY KEY, session_id TEXT, doc_type TEXT, storage_url TEXT, extracted_json TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS results (id SERIAL PRIMARY KEY, session_id TEXT UNIQUE, score INTEGER, risk TEXT, max_amount INTEGER, partners TEXT, missing_docs TEXT, tips TEXT, code TEXT UNIQUE, loan_amount INTEGER, analysis TEXT, created_at TIMESTAMPTZ DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS partners (id SERIAL PRIMARY KEY, name TEXT NOT NULL, type TEXT, country TEXT[], min_amount BIGINT, max_amount BIGINT, rate TEXT, sectors TEXT[], docs TEXT[], description TEXT, base_rate DECIMAL(5,2), max_rate DECIMAL(5,2))",
+        "CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, partner_id INTEGER REFERENCES partners(id), name TEXT NOT NULL, min_amount BIGINT, max_amount BIGINT, min_duration_months INTEGER, max_duration_months INTEGER, annual_rate DECIMAL(5,2), collateral_required BOOLEAN, requirements TEXT[], description TEXT)",
+        "CREATE TABLE IF NOT EXISTS knowledge_base (id SERIAL PRIMARY KEY, category TEXT, title TEXT, content TEXT)"
     ]:
         try:
             db_execute(conn, sql)
