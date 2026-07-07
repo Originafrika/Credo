@@ -8,7 +8,13 @@ from datetime import datetime
 from groq import Groq
 import psycopg2
 
-client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+if not GROQ_API_KEY:
+    # On ne lève pas une exception immédiatement pour permettre au reste de l'app de charger,
+    # mais on log une erreur critique.
+    print("[CREDO] CRITICAL: GROQ_API_KEY is missing!")
+
+client = Groq(api_key=GROQ_API_KEY)
 
 SCORE_MODEL = "llama-3.3-70b-versatile"
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -98,8 +104,29 @@ def generate_code() -> str:
 
 
 def _extract_numbers(text: str) -> list[int]:
-    text = text.replace(".", "").replace(" ", "").replace(",", ".")
-    return [int(float(x)) for x in re.findall(r"\d+(?:\.\d+)?", text)]
+    """Extrait les nombres d'un texte, gérant les millions et les espaces."""
+    if not text:
+        return []
+
+    # Gestion des millions / k
+    text = text.lower()
+    text = re.sub(r"(\d+)\s*millions?", r"\g<1>000000", text)
+    text = re.sub(r"(\d+)\s*m\b", r"\g<1>000000", text)
+    text = re.sub(r"(\d+)\s*k\b", r"\g<1>000", text)
+
+    # Nettoyage des séparateurs de milliers communs en UEMOA (espaces ou points)
+    # On essaie de détecter si le point est un séparateur de milliers ou une décimale
+    # Dans le doute pour le crédit, on traite souvent sans décimales.
+    text = text.replace(" ", "").replace("\xa0", "")
+
+    # Si on a un format type 5.000.000, on retire les points
+    if re.search(r"\d+\.\d{3}\.\d{3}", text) or re.search(r"\d+\.\d{3}", text):
+         text = text.replace(".", "")
+
+    text = text.replace(",", ".") # Pour float()
+
+    found = re.findall(r"\d+(?:\.\d+)?", text)
+    return [int(float(x)) for x in found]
 
 
 def _estimate_monthly_revenue(answers: list[dict]) -> int:
