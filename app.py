@@ -19,6 +19,13 @@ from credo_ai import (
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "credo-dev-2026")
+from decimal import Decimal
+class _JsonEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return float(o)
+        return super().default(o)
+app.json_encoder = _JsonEncoder
 
 NEON_DSN = os.environ.get("NEON_DSN", "")
 if not NEON_DSN:
@@ -215,15 +222,12 @@ def analyze(session_id):
             return jsonify({"error": "Aucune reponse"}), 400
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
         report = build_comparison_report(answers)
-        if not report or "score" not in report:
-            db_close(conn)
-            return jsonify({"error": "Rapport invalide"}), 500
         code = None
         plan = s["plan"]
         if plan == "5000":
             code = generate_code()
         db_execute(conn,
-            "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis",
+            "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", [])), json.dumps(report.get("missing_documents", [])), json.dumps(report.get("improvement_tips", [])), code, report.get("analysis", ""))
         )
         db_execute(conn, "UPDATE sessions SET status = 'completed', code = %s, completed_at = NOW() WHERE id = %s", (code, session_id))

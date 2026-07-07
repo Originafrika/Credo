@@ -497,13 +497,16 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict]]:
                ORDER BY name ASC""",
             (country,)
         )
+        def _to_num(v):
+            return float(v) if v is not None else None
+
         partners = []
         partner_ids = []
         for r in cur.fetchall():
             partners.append({
                 "name": r[0], "type": r[1], "min_amount": r[2], "max_amount": r[3],
-                "rate": r[4], "sectors": r[5], "docs": r[6], "description": r[7],
-                "base_rate": r[8], "max_rate": r[9],
+                "rate": _to_num(r[4]), "sectors": r[5], "docs": r[6], "description": r[7],
+                "base_rate": _to_num(r[8]), "max_rate": _to_num(r[9]),
             })
             partner_ids.append(r[10])
 
@@ -521,7 +524,7 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict]]:
             for r in cur.fetchall():
                 products.append({
                     "partner": r[0], "product": r[1], "min_amount": r[2], "max_amount": r[3],
-                    "min_duration": r[4], "max_duration": r[5], "annual_rate": r[6],
+                    "min_duration": r[4], "max_duration": r[5], "annual_rate": _to_num(r[6]),
                     "collateral_required": r[7], "requirements": r[8], "description": r[9],
                 })
         conn.close()
