@@ -8,7 +8,6 @@ import psycopg2
 import psycopg2.extras
 
 from credo_ai import (
-    score_from_answers,
     build_first_question,
     build_questionnaire,
     build_questionnaire_blocks,
@@ -208,7 +207,7 @@ def analyze(session_id):
     msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
     answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
     try:
-        result = score_from_answers(answers)
+        report = build_comparison_report(answers)
     except Exception:
         db_close(conn)
         return jsonify({"error": "Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
@@ -218,18 +217,17 @@ def analyze(session_id):
         code = generate_code()
     db_execute(conn,
         "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis",
-        (session_id, result["score"], result["risk"], result["max_amount"], json.dumps(result.get("recommended_partners", [])), json.dumps(result.get("missing_documents", [])), json.dumps(result.get("improvement_tips", [])), code, result.get("analysis", ""))
+        (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", [])), json.dumps(report.get("missing_documents", [])), json.dumps(report.get("improvement_tips", [])), code, report.get("analysis", ""))
     )
     db_execute(conn, "UPDATE sessions SET status = 'completed', code = %s, completed_at = NOW() WHERE id = %s", (code, session_id))
     db_close(conn)
     return jsonify({
-        "score": result["score"],
-        "risk": result["risk"],
-        "max_amount": result["max_amount"],
-        "partners": result.get("recommended_partners", []),
-        "missing_documents": result.get("missing_documents", []),
-        "tips": result.get("improvement_tips", []),
-        "analysis": result.get("analysis", ""),
+        "score": report["score"],
+        "risk": report.get("risk", "N/A"),
+        "analysis": report.get("analysis", ""),
+        "partners": report.get("top_recommendations", []),
+        "missing_documents": report.get("missing_documents", []),
+        "tips": report.get("improvement_tips", []),
         "code": code,
         "plan": plan,
     })
@@ -288,31 +286,7 @@ def view_report(session_id):
     return render_template("report.html", report=report)
 
 
-@app.route("/api/chat/<session_id>/report")
-def api_report(session_id):
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    if not s:
-        db_close(conn)
-        return jsonify({"error": "Session invalide"}), 404
-    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-    db_close(conn)
-    answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-    report = build_comparison_report(answers)
-    return jsonify(report)
 
-@app.route("/report/<session_id>")
-def report_page(session_id):
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    if not s:
-        db_close(conn)
-        return render_template("report.html", report=None)
-    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-    db_close(conn)
-    answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-    report = build_comparison_report(answers)
-    return render_template("report.html", report=report)
 
 @app.route("/api/documents/upload/<session_id>", methods=["POST"])
 def upload_document(session_id):

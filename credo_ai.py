@@ -155,8 +155,6 @@ def _compute_realistic_max(monthly_revenue: int, has_collateral: bool, amount_wa
 # SCORING
 # ==============================================================
 
-MFI_NAMES = ["fucec", "wages", "cofina", "baobab", "micro", "finance"]
-
 def score_from_answers(answers: list[dict]) -> dict:
     description = ""
     for a in answers:
@@ -192,63 +190,15 @@ def score_from_answers(answers: list[dict]) -> dict:
     data = json.loads(resp.choices[0].message.content)
     data["model"] = SCORE_MODEL
     data["tokens_used"] = getattr(resp.usage, "total_tokens", 0)
+    data["max_amount"] = realistic_max
 
-    # Post-process: clamp max_amount to realistic_max
-    if data.get("max_amount", 0) > realistic_max:
-        data["max_amount"] = realistic_max
-
-    # Post-process: if risk is Eleve, filter partners to MFI only
-    risk_val = data.get("risk", "Eleve")
-    partners = data.get("recommended_partners", [])
-    if risk_val == "Eleve":
-        data["recommended_partners"] = [
-            p for p in partners
-            if any(mfi in (p.get("name", "") or "").lower() for mfi in MFI_NAMES)
-        ]
-        # If no MFI partners matched, force default
-        if not data["recommended_partners"]:
-            data["recommended_partners"] = [
-                {"name": "FUCEC-Togo", "product": "Credit Micro-Entreprise", "amount": min(realistic_max, 500000), "rate": "18%", "reason": "Microfinance adaptee aux profils sans garantie materielle, avec accompagnement personnalise."},
-                {"name": "WAGES Togo", "product": "Credit Femmes", "amount": min(realistic_max, 300000), "rate": "20%", "reason": "Credit solidaire accessible sans garantie, ideal pour demarrage d'activite."},
-                {"name": "Cofina Togo", "product": "Credit Rapid", "amount": min(realistic_max, 200000), "rate": "22%", "reason": "Credit de proximite sans garantie, remboursement flexible."},
-            ]
-
-    _log(f"Groq score OK: {data.get('score')}, max: {data.get('max_amount')}, risk: {data.get('risk')}, tokens: {data['tokens_used']}")
+    _log(f"Groq score OK: {data.get('score')}, risk: {data.get('risk')}, tokens: {data['tokens_used']}")
     return data
 
 
 def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool, realistic_max: int, risk_label: str) -> str:
     compacted = _compact_history(answers)
     qa = "\n".join(f"- {a.get('q', '')}: {a.get('a', '')}" for a in compacted)
-
-    sector_hint = ""
-    for a in answers:
-        r = (a.get("a") or "").lower()
-        if any(w in r for w in ["commerce", "vente", "boutique"]):
-            sector_hint = "commerce"
-        elif any(w in r for w in ["agriculture", "ferme", "champ"]):
-            sector_hint = "agriculture"
-        elif any(w in r for w in ["service", "transport", "restaurant"]):
-            sector_hint = "service"
-        elif any(w in r for w in ["artisan", "atelier", "couture"]):
-            sector_hint = "artisanat"
-
-    partners, products, rules = _get_partners(realistic_max, sector_hint)
-
-    partners_str = "\n".join(
-        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs: {', '.join(p['docs'])}."
-        for p in partners
-    ) if partners else ""
-
-    products_str = "\n".join(
-        f"- {pr['product']} ({pr['partner']}): {pr['min_amount']:,}-{pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%. Garantie: {'oui' if pr['collateral_required'] else 'non'}. Req: {', '.join(pr['requirements'])}."
-        for pr in products[:8]
-    ) if products else ""
-
-    rules_str = "\n".join(
-        f"  [{r['category']}] {r['title']}: {r['content']}"
-        for r in rules[:6]
-    ) if rules else ""
 
     return f"""Tu es un analyste de credit pour le marche UEMOA. Analyse CE profil precis.
 
@@ -258,34 +208,19 @@ Profil:
 Revenu mensuel: {income} FCFA
 Montant demande: {wanted} FCFA
 Collateral: {"oui" if collateral else "non"}
-Montant realiste max: {realistic_max} FCFA (regle: {6 if not collateral else 24}x revenu mensuel)
 Risque preliminaire: {risk_label}
 
---- PARTENAIRES DISPONIBLES ---
-{partners_str}
---- PRODUITS DE CREDIT ---
-{products_str}
---- REGLES METIER ---
-{rules_str}
-
 INSTRUCTIONS STRICTES:
-1. max_amount NE PEUT PAS depasser {realistic_max} FCFA. C'est ABSOLU.
-2. Score base sur: remboursement possible (max 50% du revenu), secteur, collateral, historique
-3. Si risque = Eleve, recommande UNIQUEMENT des microfinances (FUCEC, WAGES, Cofina, BAOBAB) — JAMAIS de banques
-4. Chaque partenaire doit avoir un produit specifique
-5. analysis: cite les chiffres du profil (secteur, montant demande, revenu, collateral)
-6. missing_documents: extraits des docs requis par les partenaires recommandes
-7. improvement_tips: SPECIFIQUES a ce profil, pas generiques
+1. Score base sur: remboursement possible (max 50% du revenu), secteur, collateral, historique
+2. analysis: cite les chiffres du profil (secteur, montant demande, revenu, collateral)
+3. missing_documents: liste les documents manquants types (piece identite, justificatif revenu, garantie)
+4. improvement_tips: SPECIFIQUES a ce profil, pas generiques
 
 Retourne CE JSON:
 {{
   "score": 420,
   "risk": "Eleve",
-  "max_amount": {realistic_max},
   "analysis": "2-3 phrases SPECIFIQUES. Cite secteur, montant, revenu. Explique le verdict.",
-  "recommended_partners": [
-    {{"name": "Institution", "product": "Produit", "amount": {realistic_max}, "rate": "X%", "reason": "Pourquoi ce partenaire et ce produit pour CE profil"}}
-  ],
   "missing_documents": ["piece_identite"],
   "improvement_tips": ["Conseil SPECIFIQUE"],
   "confidence": 0.85
@@ -486,236 +421,7 @@ Genere un questionnaire en BLOCS. Chaque bloc = 2 a 4 questions sur UN theme.
     return {"blocks": [flat[i:i+3] for i in range(0, len(flat), 3)]}
 
 
-# ==============================================================
-# COUCHE 1 — Comparateur exhaustif multi-institutions
-# ==============================================================
 
-def _get_all_partners(country: str = "TG") -> list[dict]:
-    """Retourne TOUS les partenaires actifs pour comparaison exhaustive."""
-    if not NEON_DSN:
-        return []
-    try:
-        conn = psycopg2.connect(NEON_DSN)
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT name, type, min_amount, max_amount, rate, sectors, docs, 
-                      description, base_rate, max_rate, id
-               FROM partners
-               WHERE countries @> ARRAY[%s]::TEXT[]
-               ORDER BY type, name""",
-            (country,)
-        )
-        rows = []
-        for r in cur.fetchall():
-            rows.append({
-                "name": r[0], "type": r[1], "min_amount": r[2], "max_amount": r[3],
-                "rate": r[4], "sectors": r[5], "docs": r[6], "description": r[7],
-                "base_rate": r[8], "max_rate": r[9], "id": r[10],
-            })
-        conn.close()
-        return rows
-    except Exception as e:
-        _log(f"get_all_partners failed: {e}")
-        return []
-
-
-def _get_products_for_partners(partner_ids: list) -> list[dict]:
-    """Recupere les produits pour une liste d'ids partenaires."""
-    if not NEON_DSN or not partner_ids:
-        return []
-    try:
-        conn = psycopg2.connect(NEON_DSN)
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT p.name AS partner_name, pr.name, pr.min_amount, pr.max_amount,
-                      pr.min_duration_months, pr.max_duration_months, pr.annual_rate,
-                      pr.collateral_required, pr.requirements, pr.description
-               FROM products pr JOIN partners p ON p.id = pr.partner_id
-               WHERE pr.partner_id = ANY(%s)
-               ORDER BY pr.annual_rate ASC""",
-            (partner_ids,)
-        )
-        products = []
-        for r in cur.fetchall():
-            products.append({
-                "partner": r[0], "product": r[1], "min_amount": r[2], "max_amount": r[3],
-                "min_duration": r[4], "max_duration": r[5], "annual_rate": r[6],
-                "collateral_required": r[7], "requirements": r[8], "description": r[9],
-            })
-        conn.close()
-        return products
-    except Exception as e:
-        _log(f"get_products_for_partners failed: {e}")
-        return []
-
-
-def build_comparison_report(answers: list[dict]) -> dict:
-    """Compare le profil utilisateur contre TOUS les partenaires et produit un rapport complet."""
-    description = ""
-    for a in answers:
-        if "decris" in (a.get("q") or "").lower()[:8]:
-            description = a.get("a", "")
-
-    monthly_income = _estimate_monthly_revenue(answers)
-    amount_wanted = _extract_amount_wanted(description, answers)
-
-    sector = ""
-    for a in answers:
-        r = (a.get("a") or "").lower()
-        if any(w in r for w in ["commerce", "vente", "boutique"]):
-            sector = "commerce"
-        elif any(w in r for w in ["agriculture", "ferme", "champ"]):
-            sector = "agriculture"
-        elif any(w in r for w in ["service", "transport", "restaurant"]):
-            sector = "service"
-        elif any(w in r for w in ["artisan", "atelier", "couture"]):
-            sector = "artisanat"
-        elif any(w in r for w in ["elevage", "animal", "betail"]):
-            sector = "elevage"
-        elif any(w in r for w in ["industrie", "usine", "fabrication"]):
-            sector = "industrie"
-
-    has_collateral = False
-    for a in answers:
-        r = (a.get("a") or "").lower()
-        if "garantie" in (a.get("q") or "").lower() and "oui" in r:
-            has_collateral = True
-        if any(w in r for w in ["terrain", "boutique", "maison", "vehicule", "iphone"]):
-            has_collateral = True
-
-    has_business_reg = False
-    for a in answers:
-        r = (a.get("a") or "").lower()
-        q = (a.get("q") or "").lower()
-        if ("registre" in q or "rcm" in q or "patente" in q) and ("oui" in r or "j'ai" in r):
-            has_business_reg = True
-
-    has_credit_history = False
-    for a in answers:
-        r = (a.get("a") or "").lower()
-        q = (a.get("q") or "").lower()
-        if ("credit" in q or "emprunt" in q or "pret" in q) and ("oui" in r):
-            has_credit_history = True
-
-    duration_wanted = 0
-    for a in answers:
-        r = (a.get("a") or "").lower()
-        q = (a.get("q") or "").lower()
-        if "duree" in q or "mois" in q or "rembourser" in q:
-            nums = _extract_numbers(r)
-            if nums:
-                duration_wanted = max(nums)
-
-    # Score simple
-    score = 300
-    if monthly_income >= 100000:
-        score += 50
-    if monthly_income >= 300000:
-        score += 100
-    if monthly_income >= 500000:
-        score += 150
-    if has_collateral:
-        score += 100
-    if has_business_reg:
-        score += 50
-    if has_credit_history:
-        score += 50
-    if amount_wanted > 0 and amount_wanted <= monthly_income * 12:
-        score += 50
-    score = min(score, 1000)
-
-    realistic_max = _compute_realistic_max(monthly_income, has_collateral, amount_wanted)
-
-    # Recuperer TOUS les partenaires
-    all_partners = _get_all_partners()
-    partner_ids = [p["id"] for p in all_partners]
-    products_map = {}
-    for pr in _get_products_for_partners(partner_ids):
-        products_map.setdefault(pr["partner"], []).append(pr)
-
-    comparisons = []
-    for p in all_partners:
-        issues = []
-        strengths = []
-
-        amt = amount_wanted if amount_wanted > 0 else realistic_max
-
-        if p["min_amount"] and amt < p["min_amount"]:
-            issues.append(f"Montant minimum: {p['min_amount']:,.0f} FCFA")
-        elif p["max_amount"] and amt > p["max_amount"]:
-            issues.append(f"Plafond: {p['max_amount']:,.0f} FCFA")
-        else:
-            strengths.append("Montant dans la fourchette")
-
-        if p["sectors"] and sector:
-            if sector in p["sectors"]:
-                strengths.append(f"Secteur '{sector}' finance")
-            else:
-                issues.append(f"Secteurs finances: {', '.join(p['sectors'])}")
-
-        if p.get("docs") and "business_license" in p["docs"]:
-            if not has_business_reg:
-                issues.append("Registre de commerce requis")
-            else:
-                strengths.append("RC disponible")
-
-        if p.get("docs") and "collateral_document" in p["docs"] and not has_collateral:
-            issues.append("Garantie requise")
-        elif p.get("docs") and "collateral_document" in p["docs"] and has_collateral:
-            strengths.append("Garantie disponible")
-
-        match_pct = len(strengths) / max(len(strengths) + len(issues), 1) * 100
-        if len(issues) == 0:
-            status = "eligible"
-        elif match_pct >= 40:
-            status = "partial"
-        else:
-            status = "not_eligible"
-
-        comparisons.append({
-            "name": p["name"],
-            "type": p["type"],
-            "min_amount": p["min_amount"],
-            "max_amount": p["max_amount"],
-            "rate": p.get("rate", ""),
-            "status": status,
-            "match_percent": round(match_pct),
-            "strengths": strengths,
-            "issues": issues,
-            "products": [{
-                "name": pr["product"],
-                "min_amount": pr["min_amount"],
-                "max_amount": pr["max_amount"],
-                "rate": pr["annual_rate"],
-                "duration": f"{pr['min_duration']}-{pr['max_duration']} mois",
-                "collateral": pr["collateral_required"],
-            } for pr in products_map.get(p["name"], [])[:3]],
-        })
-
-    status_order = {"eligible": 0, "partial": 1, "not_eligible": 2}
-    comparisons.sort(key=lambda c: (status_order.get(c["status"], 99), -c["match_percent"]))
-
-    top = [c for c in comparisons if c["status"] == "eligible"][:3]
-
-    return {
-        "score": score,
-        "profil": {
-            "monthly_income": monthly_income,
-            "amount_wanted": amount_wanted,
-            "realistic_max": realistic_max,
-            "sector": sector or "non specifie",
-            "collateral": has_collateral,
-            "business_registration": has_business_reg,
-            "credit_history": has_credit_history,
-            "duration_wanted": duration_wanted,
-        },
-        "total_institutions": len(comparisons),
-        "eligible_count": len([c for c in comparisons if c["status"] == "eligible"]),
-        "partial_count": len([c for c in comparisons if c["status"] == "partial"]),
-        "not_eligible_count": len([c for c in comparisons if c["status"] == "not_eligible"]),
-        "top_recommendations": top,
-        "all_comparisons": comparisons,
-    }
 
 
 def build_next_question(answers: list[dict]) -> str:
@@ -872,8 +578,13 @@ def build_comparison_report(answers: list[dict]) -> dict:
     sector = _extract_sector(answers)
     collateral = _extract_has_collateral(answers)
     business_reg = _extract_business_registration(answers)
+    realistic_max = _compute_realistic_max(monthly_income, collateral, amount_wanted)
     score_data = score_from_answers(answers)
     score = score_data.get("score", 0)
+    risk = score_data.get("risk", "N/A")
+    analysis = score_data.get("analysis", "")
+    missing_docs = score_data.get("missing_documents", [])
+    tips = score_data.get("improvement_tips", [])
 
     if amount_wanted == 0:
         amount_wanted = 500000
@@ -979,9 +690,15 @@ def build_comparison_report(answers: list[dict]) -> dict:
         "partial_count": partial_count,
         "not_eligible_count": not_eligible_count,
         "score": score,
+        "risk": risk,
+        "analysis": analysis,
+        "missing_documents": missing_docs,
+        "improvement_tips": tips,
+        "max_amount": realistic_max,
         "profil": {
             "monthly_income": monthly_income,
             "amount_wanted": amount_wanted,
+            "realistic_max": realistic_max,
             "sector": sector,
             "collateral": collateral,
             "business_registration": business_reg,
