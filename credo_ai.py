@@ -771,3 +771,221 @@ def extract_document_fields(image_url: str, doc_type: str) -> dict:
     except Exception as e:
         _log(f"Vision failed: {e}")
         return {"error": str(e), "doc_type": doc_type}
+
+
+# ==============================================================
+# COUCHE 1 — Comparateur exhaustif multi-institutions
+# ==============================================================
+
+def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict]]:
+    """Retourne TOUS les partenaires actifs (sans LIMIT) et leurs produits."""
+    if not NEON_DSN:
+        return [], []
+    try:
+        conn = psycopg2.connect(NEON_DSN)
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
+               FROM partners
+               WHERE countries @> ARRAY[%s]::TEXT[]
+               ORDER BY name ASC""",
+            (country,)
+        )
+        partners = []
+        partner_ids = []
+        for r in cur.fetchall():
+            partners.append({
+                "name": r[0], "type": r[1], "min_amount": r[2], "max_amount": r[3],
+                "rate": r[4], "sectors": r[5], "docs": r[6], "description": r[7],
+                "base_rate": r[8], "max_rate": r[9],
+            })
+            partner_ids.append(r[10])
+
+        products = []
+        if partner_ids:
+            cur.execute(
+                """SELECT p.name AS partner_name, pr.name, pr.min_amount, pr.max_amount,
+                          pr.min_duration_months, pr.max_duration_months, pr.annual_rate,
+                          pr.collateral_required, pr.requirements, pr.description
+                   FROM products pr JOIN partners p ON p.id = pr.partner_id
+                   WHERE pr.partner_id = ANY(%s)
+                   ORDER BY pr.annual_rate ASC""",
+                (partner_ids,)
+            )
+            for r in cur.fetchall():
+                products.append({
+                    "partner": r[0], "product": r[1], "min_amount": r[2], "max_amount": r[3],
+                    "min_duration": r[4], "max_duration": r[5], "annual_rate": r[6],
+                    "collateral_required": r[7], "requirements": r[8], "description": r[9],
+                })
+        conn.close()
+        return partners, products
+    except Exception as e:
+        _log(f"_get_all_partners failed: {e}")
+        return [], []
+
+
+def _extract_sector(answers: list[dict]) -> str:
+    text = " ".join(a.get("a", "") for a in answers).lower()
+    sectors = {
+        "commerce": ["commerce", "vente", "boutique", "magasin", "grossiste", "detail"],
+        "agriculture": ["agriculture", "ferme", "champ", "elevage", "plantation", "culture"],
+        "service": ["service", "transport", "restaurant", "coiffure", "hotel", "logistique"],
+        "artisanat": ["artisan", "atelier", "couture", "menuiserie", "mecanique"],
+        "industrie": ["industrie", "production", "fabrication", "usine"],
+        "tech": ["tech", "ia", "numerique", "informatique", "developpement"],
+    }
+    for sector, keywords in sectors.items():
+        if any(kw in text for kw in keywords):
+            return sector
+    for a in answers:
+        q = (a.get("q") or "").lower()
+        if "secteur" in q or "activite" in q:
+            return a.get("a", "").strip()[:30] or "non precise"
+    return "non precise"
+
+
+def _extract_has_collateral(answers: list[dict]) -> bool:
+    for a in answers:
+        r = (a.get("a") or "").lower()
+        q = (a.get("q") or "").lower()
+        if "garantie" in q and "non" in r:
+            return False
+        if "garantie" in r and any(w in r for w in ["terrain", "boutique", "maison", "vehicule", "oui"]):
+            return True
+    return False
+
+
+def _extract_business_registration(answers: list[dict]) -> bool:
+    for a in answers:
+        r = (a.get("a") or "").lower()
+        q = (a.get("q") or "").lower()
+        if "registre" in q or "rc" in q or "patente" in q:
+            return "oui" in r or "rc" in r or "patente" in r
+    return False
+
+
+def build_comparison_report(answers: list[dict]) -> dict:
+    partners, products = _get_all_partners()
+    monthly_income = _estimate_monthly_revenue(answers)
+    amount_wanted = _extract_amount_wanted("", answers)
+    sector = _extract_sector(answers)
+    collateral = _extract_has_collateral(answers)
+    business_reg = _extract_business_registration(answers)
+    score_data = score_from_answers(answers)
+    score = score_data.get("score", 0)
+
+    if amount_wanted == 0:
+        amount_wanted = 500000
+
+    # Grouper les produits par partenaire
+    products_by_partner = {}
+    for pr in products:
+        pn = pr["partner"]
+        if pn not in products_by_partner:
+            products_by_partner[pn] = []
+        products_by_partner[pn].append({
+            "name": pr["product"],
+            "min_amount": pr["min_amount"],
+            "max_amount": pr["max_amount"],
+            "rate": pr["annual_rate"],
+        })
+
+    all_comparisons = []
+    eligible_count = 0
+    partial_count = 0
+    not_eligible_count = 0
+
+    for p in partners:
+        issues = []
+        strengths = []
+        match_score = 0
+
+        p_min = p["min_amount"] or 0
+        p_max = p["max_amount"] or float("inf")
+
+        # Amount check
+        if p_min > 0 and amount_wanted < p_min:
+            issues.append(f"Montant minimum {p_min:,} FCFA > {amount_wanted:,} FCFA demande")
+        elif p_max < float("inf") and amount_wanted > p_max:
+            issues.append(f"Montant maximum {p_max:,} FCFA < {amount_wanted:,} FCFA demande")
+        else:
+            match_score += 30
+            strengths.append(f"Montant compatible ({p_min:,}-{p_max:,} FCFA)")
+
+        # Sector check
+        if p["sectors"] and sector not in ["non precise"]:
+            p_sectors = [s.strip().lower() for s in p["sectors"]]
+            if sector.lower() in p_sectors:
+                match_score += 25
+                strengths.append(f"Secteur '{sector}' finance")
+            else:
+                issues.append(f"Secteur '{sector}' non couvert")
+
+        # Collateral check
+        if collateral:
+            match_score += 15
+            strengths.append("Garantie disponible")
+        else:
+            pass  # on ne penalise pas l'absence de garantie
+
+        # Business registration check
+        if business_reg:
+            match_score += 10
+            strengths.append("RC/Patente disponible")
+
+        # Docs readiness
+        if p["docs"]:
+            match_score += 10
+            strengths.append(f"Documents requis: {', '.join(p['docs'][:3])}")
+
+        # Risk/compatibility
+        if p["description"] and sector not in ["non precise"]:
+            desc = p["description"].lower()
+            if sector.lower() in desc:
+                match_score += 10
+
+        # Cap at 100
+        match_score = min(match_score, 100)
+
+        status = "eligible" if match_score >= 60 else ("partial" if match_score >= 30 else "not_eligible")
+        if status == "eligible":
+            eligible_count += 1
+        elif status == "partial":
+            partial_count += 1
+        else:
+            not_eligible_count += 1
+
+        prs = products_by_partner.get(p["name"], [])
+        all_comparisons.append({
+            "name": p["name"],
+            "type": p["type"],
+            "min_amount": p["min_amount"],
+            "max_amount": p["max_amount"],
+            "rate": p["rate"],
+            "status": status,
+            "match_percent": match_score,
+            "strengths": strengths[:3],
+            "issues": issues[:3],
+            "products": prs[:3],
+        })
+
+    # Top recommendations = eligible triés par match_score
+    top = sorted([c for c in all_comparisons if c["status"] == "eligible"], key=lambda x: x["match_percent"], reverse=True)[:5]
+
+    return {
+        "total_institutions": len(partners),
+        "eligible_count": eligible_count,
+        "partial_count": partial_count,
+        "not_eligible_count": not_eligible_count,
+        "score": score,
+        "profil": {
+            "monthly_income": monthly_income,
+            "amount_wanted": amount_wanted,
+            "sector": sector,
+            "collateral": collateral,
+            "business_registration": business_reg,
+        },
+        "top_recommendations": top,
+        "all_comparisons": all_comparisons,
+    }

@@ -13,9 +13,9 @@ from credo_ai import (
     build_questionnaire,
     build_questionnaire_blocks,
     build_next_question,
-    build_comparison_report,
     extract_document_fields,
     generate_code,
+    build_comparison_report,
 )
 
 app = Flask(__name__)
@@ -287,6 +287,32 @@ def view_report(session_id):
         return render_template("error.html", message=f"Erreur: {str(e)[:200]}")
     return render_template("report.html", report=report)
 
+
+@app.route("/api/chat/<session_id>/report")
+def api_report(session_id):
+    conn = get_db()
+    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+    if not s:
+        db_close(conn)
+        return jsonify({"error": "Session invalide"}), 404
+    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+    db_close(conn)
+    answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+    report = build_comparison_report(answers)
+    return jsonify(report)
+
+@app.route("/report/<session_id>")
+def report_page(session_id):
+    conn = get_db()
+    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+    if not s:
+        db_close(conn)
+        return render_template("report.html", report=None)
+    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+    db_close(conn)
+    answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+    report = build_comparison_report(answers)
+    return render_template("report.html", report=report)
 
 @app.route("/api/documents/upload/<session_id>", methods=["POST"])
 def upload_document(session_id):
