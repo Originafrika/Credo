@@ -82,6 +82,10 @@ def ensure_migration():
         conn = get_db()
         db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS questionnaire TEXT")
         db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS question_idx INTEGER DEFAULT 0")
+        db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS max_amount INTEGER DEFAULT 0")
+        db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS missing_docs TEXT")
+        db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS tips TEXT")
+        db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS analysis TEXT")
         db_close(conn)
         _migrated = True
         print("[CREDO] migration ok", flush=True)
@@ -199,38 +203,42 @@ def submit_questionnaire(session_id):
 
 @app.route("/api/chat/<session_id>/analyze", methods=["POST"])
 def analyze(session_id):
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    if not s:
-        db_close(conn)
-        return jsonify({"error": "Session invalide"}), 404
-    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-    answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
     try:
-        report = build_comparison_report(answers)
-    except Exception:
+        conn = get_db()
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        if not s:
+            db_close(conn)
+            return jsonify({"error": "Session invalide"}), 404
+        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        try:
+            report = build_comparison_report(answers)
+        except Exception:
+            db_close(conn)
+            return jsonify({"error": "Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
+        code = None
+        plan = s["plan"]
+        if plan == "5000":
+            code = generate_code()
+        db_execute(conn,
+            "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis",
+            (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", [])), json.dumps(report.get("missing_documents", [])), json.dumps(report.get("improvement_tips", [])), code, report.get("analysis", ""))
+        )
+        db_execute(conn, "UPDATE sessions SET status = 'completed', code = %s, completed_at = NOW() WHERE id = %s", (code, session_id))
         db_close(conn)
-        return jsonify({"error": "Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
-    code = None
-    plan = s["plan"]
-    if plan == "5000":
-        code = generate_code()
-    db_execute(conn,
-        "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis",
-        (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", [])), json.dumps(report.get("missing_documents", [])), json.dumps(report.get("improvement_tips", [])), code, report.get("analysis", ""))
-    )
-    db_execute(conn, "UPDATE sessions SET status = 'completed', code = %s, completed_at = NOW() WHERE id = %s", (code, session_id))
-    db_close(conn)
-    return jsonify({
-        "score": report["score"],
-        "risk": report.get("risk", "N/A"),
-        "analysis": report.get("analysis", ""),
-        "partners": report.get("top_recommendations", []),
-        "missing_documents": report.get("missing_documents", []),
-        "tips": report.get("improvement_tips", []),
-        "code": code,
-        "plan": plan,
-    })
+        return jsonify({
+            "score": report["score"],
+            "risk": report.get("risk", "N/A"),
+            "analysis": report.get("analysis", ""),
+            "partners": report.get("top_recommendations", []),
+            "missing_documents": report.get("missing_documents", []),
+            "tips": report.get("improvement_tips", []),
+            "code": code,
+            "plan": plan,
+        })
+    except Exception as e:
+        print(f"[CREDO] analyze error: {e}", flush=True)
+        return jsonify({"error": f"Erreur: {str(e)[:300]}"}), 500
 
 @app.route("/api/chat/<session_id>/result")
 def get_result(session_id):
