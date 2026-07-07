@@ -93,6 +93,7 @@ def ensure_migration():
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS missing_docs TEXT")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS tips TEXT")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS analysis TEXT")
+        db_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_results_session ON results(session_id)")
         db_close(conn)
         _migrated = True
         print("[CREDO] migration ok", flush=True)
@@ -227,7 +228,7 @@ def analyze(session_id):
         if plan == "5000":
             code = generate_code()
         db_execute(conn,
-            "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis",
             (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", [])), json.dumps(report.get("missing_documents", [])), json.dumps(report.get("improvement_tips", [])), code, report.get("analysis", ""))
         )
         db_execute(conn, "UPDATE sessions SET status = 'completed', code = %s, completed_at = NOW() WHERE id = %s", (code, session_id))
@@ -320,20 +321,6 @@ def upload_document(session_id):
     db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, storage_url))
     db_close(conn)
     return jsonify({"document_id": doc_id, "storage_url": storage_url})
-
-@app.route("/api/debug/report/<session_id>")
-def debug_report(session_id):
-    try:
-        conn = get_db()
-        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-        db_close(conn)
-        if not msgs:
-            return jsonify({"error": "no messages", "session": session_id})
-        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-        report = build_comparison_report(answers)
-        return jsonify({"ok": True, "score": report.get("score"), "risk": report.get("risk"), "partners_count": len(report.get("top_recommendations", []))})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:500], "type": type(e).__name__}), 500
 
 @app.route("/verify/<code>")
 def verify_code(code):
