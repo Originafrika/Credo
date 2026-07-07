@@ -210,12 +210,14 @@ def analyze(session_id):
             db_close(conn)
             return jsonify({"error": "Session invalide"}), 404
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-        try:
-            report = build_comparison_report(answers)
-        except Exception:
+        if not msgs:
             db_close(conn)
-            return jsonify({"error": "Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
+            return jsonify({"error": "Aucune reponse"}), 400
+        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        report = build_comparison_report(answers)
+        if not report or "score" not in report:
+            db_close(conn)
+            return jsonify({"error": "Rapport invalide"}), 500
         code = None
         plan = s["plan"]
         if plan == "5000":
@@ -314,6 +316,20 @@ def upload_document(session_id):
     db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, storage_url))
     db_close(conn)
     return jsonify({"document_id": doc_id, "storage_url": storage_url})
+
+@app.route("/api/debug/report/<session_id>")
+def debug_report(session_id):
+    try:
+        conn = get_db()
+        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+        db_close(conn)
+        if not msgs:
+            return jsonify({"error": "no messages", "session": session_id})
+        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        report = build_comparison_report(answers)
+        return jsonify({"ok": True, "score": report.get("score"), "risk": report.get("risk"), "partners_count": len(report.get("top_recommendations", []))})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:500], "type": type(e).__name__}), 500
 
 @app.route("/verify/<code>")
 def verify_code(code):
