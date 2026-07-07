@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rapport Credo — Comparatif complet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 font-sans">
+    <nav class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
+            <span class="text-2xl font-bold text-indigo-600">Credo</span>
+            <span class="text-sm text-gray-500">Rapport comparatif</span>
+        </div>
+    </nav>
+
+    <div class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+
+        <!-- Header -->
+        <div class="bg-white rounded-xl p-8 shadow-sm">
+            <h1 class="text-3xl font-bold mb-2">Rapport de solvabilité</h1>
+            <p class="text-gray-600">Comparaison de ton profil contre <strong>{{ report.total_institutions }}</strong> institutions financières</p>
+            <div class="mt-4 flex gap-4 flex-wrap">
+                <div class="bg-green-50 text-green-700 px-4 py-2 rounded-lg font-semibold">
+                    {{ report.eligible_count }} éligible(s)
+                </div>
+                <div class="bg-yellow-50 text-yellow-700 px-4 py-2 rounded-lg font-semibold">
+                    {{ report.partial_count }} partiel(s)
+                </div>
+                <div class="bg-red-50 text-red-700 px-4 py-2 rounded-lg font-semibold">
+                    {{ report.not_eligible_count }} non éligible(s)
+                </div>
+            </div>
+        </div>
+
+        <!-- Ton profil -->
+        <div class="bg-white rounded-xl p-8 shadow-sm">
+            <h2 class="text-xl font-bold mb-4">Ton profil</h2>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-500">Score estimé</p>
+                    <p class="text-2xl font-bold">{{ report.score }}/1000</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-500">Revenu mensuel</p>
+                    <p class="text-2xl font-bold">{{ "{:,.0f}".format(report.profil.monthly_income) }} FCFA</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-500">Montant souhaité</p>
+                    <p class="text-2xl font-bold">{{ "{:,.0f}".format(report.profil.amount_wanted) }} FCFA</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-500">Secteur</p>
+                    <p class="font-semibold">{{ report.profil.sector }}</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-500">Garantie</p>
+                    <p class="font-semibold">{% if report.profil.collateral %}Oui{% else %}Non{% endif %}</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-500">RC/Patente</p>
+                    <p class="font-semibold">{% if report.profil.business_registration %}Oui{% else %}Non{% endif %}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top recommendations -->
+        {% if report.top_recommendations %}
+        <div class="bg-white rounded-xl p-8 shadow-sm">
+            <h2 class="text-xl font-bold mb-4">Meilleures options pour toi</h2>
+            <div class="grid gap-4">
+            {% for p in report.top_recommendations %}
+                <div class="border-l-4 border-green-500 bg-green-50 p-4 rounded-r-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold text-lg">{{ p.name }}</h3>
+                            <p class="text-sm text-gray-600">{{ p.type }}</p>
+                        </div>
+                        <span class="bg-green-600 text-white px-3 py-1 rounded-full text-sm font-semibold">{{ p.match_percent }}%</span>
+                    </div>
+                    <div class="mt-2 text-sm text-gray-600">
+                        {% if p.min_amount and p.max_amount %}
+                        <span class="mr-4">{{ "{:,.0f}".format(p.min_amount) }} - {{ "{:,.0f}".format(p.max_amount) }} FCFA</span>
+                        {% endif %}
+                        {% if p.rate %}
+                        <span>Taux: {{ p.rate }}</span>
+                        {% endif %}
+                    </div>
+                    {% if p.strengths %}
+                    <ul class="mt-2 text-sm">
+                        {% for s in p.strengths %}
+                        <li class="text-green-600">✓ {{ s }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Comparaison complète -->
+        <div class="bg-white rounded-xl p-8 shadow-sm">
+            <h2 class="text-xl font-bold mb-4">Comparaison complète — {{ report.total_institutions }} institutions</h2>
+
+            <!-- Légende -->
+            <div class="flex gap-4 mb-6 text-sm">
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span> Éligible</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span> Partiel</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Non éligible</span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b text-left">
+                            <th class="py-3 pr-4 font-semibold">Institution</th>
+                            <th class="py-3 pr-4 font-semibold">Type</th>
+                            <th class="py-3 pr-4 font-semibold">Fourchette</th>
+                            <th class="py-3 pr-4 font-semibold">Taux</th>
+                            <th class="py-3 pr-4 font-semibold">Statut</th>
+                            <th class="py-3 font-semibold">Détails</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for p in report.all_comparisons %}
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 pr-4 font-medium">{{ p.name }}</td>
+                            <td class="py-3 pr-4 text-gray-600">{{ p.type }}</td>
+                            <td class="py-3 pr-4 text-gray-600">
+                                {% if p.min_amount and p.max_amount %}
+                                {{ "{:,.0f}".format(p.min_amount) }} - {{ "{:,.0f}".format(p.max_amount) }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="py-3 pr-4 text-gray-600">{{ p.rate or '—' }}</td>
+                            <td class="py-3 pr-4">
+                                {% if p.status == 'eligible' %}
+                                <span class="bg-green-100 text-green-700 px-2 py-1 rounded font-semibold text-xs">Éligible</span>
+                                {% elif p.status == 'partial' %}
+                                <span class="bg-yellow-100 text-yellow-700 px-2 py-1 rounded font-semibold text-xs">{{ p.match_percent }}%</span>
+                                {% else %}
+                                <span class="bg-red-100 text-red-700 px-2 py-1 rounded font-semibold text-xs">Non</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-3">
+                                <button onclick="toggleDetails('{{ loop.index }}')" class="text-indigo-600 hover:underline text-xs">Détails</button>
+                                <div id="details-{{ loop.index }}" class="hidden mt-2 text-xs text-gray-600 space-y-1">
+                                    {% if p.strengths %}
+                                    <div class="text-green-600">
+                                        {% for s in p.strengths %}<div>✓ {{ s }}</div>{% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    {% if p.issues %}
+                                    <div class="text-red-600">
+                                        {% for i in p.issues %}<div>✗ {{ i }}</div>{% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    {% if p.products %}
+                                    <div class="mt-2 border-t pt-2">
+                                        <p class="font-semibold text-gray-700">Produits:</p>
+                                        {% for pr in p.products %}
+                                        <div class="ml-2">• {{ pr.name }} — {{ "{:,.0f}".format(pr.min_amount or 0) }}-{{ "{:,.0f}".format(pr.max_amount or 0) }} FCFA, {{ pr.rate }}%</div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Disclaimer -->
+        <div class="bg-gray-100 rounded-xl p-6 text-sm text-gray-500">
+            <p>Ce rapport est basé sur les informations que tu as fournies et notre base de données d'institutions financières. Les conditions exactes (taux, montant, durée) sont confirmées par l'institution lors de la demande formelle. Credo n'est pas un conseiller financier agréé.</p>
+        </div>
+    </div>
+
+    <script>
+    function toggleDetails(id) {
+        const el = document.getElementById('details-' + id);
+        el.classList.toggle('hidden');
+    }
+    </script>
+</body>
+</html>
