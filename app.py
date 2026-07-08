@@ -322,6 +322,16 @@ def upload_document(session_id):
     db_close(conn)
     return jsonify({"document_id": doc_id, "storage_url": storage_url})
 
+@app.route("/api/debug/partners")
+def debug_partners():
+    from credo_ai import _get_all_partners, _extract_country
+    import json
+    try:
+        p, pr = _get_all_partners("TG")
+        return jsonify({"partners": len(p), "products": len(pr), "names": [x["name"] for x in p[:10]]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/verify/<code>")
 def verify_code(code):
     conn = get_db()
