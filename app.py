@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from flask import Flask, render_template, request, jsonify, session, send_from_directory
 import psycopg2
@@ -19,7 +20,7 @@ from credo_ai import (
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "credo-dev-2026")
-from decimal import Decimal
+
 class _JsonEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
@@ -30,8 +31,6 @@ app.json_encoder = _JsonEncoder
 NEON_DSN = os.environ.get("NEON_DSN", "")
 if not NEON_DSN:
     raise RuntimeError("NEON_DSN environment variable is required")
-
-# ── DB layer ──
 
 def get_db():
     return psycopg2.connect(NEON_DSN)
@@ -55,8 +54,6 @@ def db_close(conn):
     except:
         pass
 
-# ── Init DB ──
-
 def init_db():
     conn = get_db()
     for sql in [
@@ -65,16 +62,8 @@ def init_db():
         "CREATE TABLE IF NOT EXISTS documents (id SERIAL PRIMARY KEY, session_id TEXT, doc_type TEXT, storage_url TEXT, extracted_json TEXT, created_at TEXT DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS results (id SERIAL PRIMARY KEY, session_id TEXT UNIQUE, score INTEGER, risk TEXT, max_amount INTEGER, partners TEXT, missing_docs TEXT, tips TEXT, code TEXT UNIQUE, loan_amount INTEGER, analysis TEXT, created_at TEXT DEFAULT NOW())",
     ]:
-        try:
-            db_execute(conn, sql)
-        except Exception:
-            pass
-    try:
-        db_execute(conn, "DELETE FROM results WHERE score > 600")
-        db_execute(conn, "DELETE FROM sessions WHERE status = 'completed'")
-    except Exception:
-        pass
-    db_close(conn)
+        db_execute(conn, sql)
+    conn.close()
 
 init_db()
 
@@ -100,40 +89,27 @@ def ensure_migration():
     except Exception as e:
         print(f"[CREDO] migration failed: {e}", flush=True)
 
-# ── Routes ──
-
 @app.route("/")
 def index():
     return render_template("index.html")
 
 @app.route("/chat/new")
-def chat_new():
-    return render_template("chat_new.html")
+def new_chat():
+    return render_template("chat.html")
 
 @app.route("/chat/<session_id>")
-def chat(session_id):
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    db_close(conn)
-    if not s:
-        return render_template("chat_new.html")
-    return render_template("chat.html", session_id=session_id, plan=s["plan"])
+def chat_session(session_id):
+    return render_template("chat.html", session_id=session_id)
 
 @app.route("/api/session/start", methods=["POST"])
 def start_session():
     data = request.json
-    phone = data.get("phone", "").strip()
-    plan = data.get("plan", "5000")
-    if not phone or len(phone) < 6:
-        return jsonify({"error": "Numero invalide"}), 400
-    session_id = str(uuid.uuid4())[:8]
+    phone = data.get("phone", "")
+    plan = data.get("plan", "2500")
+    session_id = uuid.uuid4().hex[:8]
     conn = get_db()
-    db_execute(conn, "INSERT INTO sessions (id, phone, plan, status) VALUES (%s, %s, %s, 'chat_active')", (session_id, phone, plan))
-    try:
-        first_q = build_first_question()
-    except Exception:
-        db_close(conn)
-        return jsonify({"error": "Credo IA indisponible. Capture d'ecran avec ta requete a it@originafrika.online"}), 503
+    db_execute(conn, "INSERT INTO sessions (id, phone, plan) VALUES (%s, %s, %s)", (session_id, phone, plan))
+    first_q = build_first_question()
     db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, first_q))
     db_close(conn)
     return jsonify({"session_id": session_id, "first_question": first_q})
@@ -156,7 +132,6 @@ def chat_message(session_id):
 
     user_count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
 
-    # First answer → generate questionnaire with LLM-decided blocks, return for progressive blocks
     if user_count and user_count["c"] == 1:
         try:
             result = build_questionnaire_blocks(answer)
@@ -173,7 +148,6 @@ def chat_message(session_id):
             db_close(conn)
             return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
 
-    # Normal single-question flow (after questionnaire or standalone)
     msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
     answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
     try:
@@ -189,7 +163,6 @@ def chat_message(session_id):
 
 @app.route("/api/chat/<session_id>/questionnaire-answers", methods=["POST"])
 def submit_questionnaire(session_id):
-    """Reçoit toutes les reponses du formulaire progressif en une seule requete."""
     data = request.json
     answers_list = data.get("answers", [])
     questions_list = data.get("questions", [])
@@ -283,7 +256,6 @@ def api_report(session_id):
         return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
     return jsonify(report)
 
-
 @app.route("/report/<session_id>")
 def view_report(session_id):
     conn = get_db()
@@ -297,60 +269,39 @@ def view_report(session_id):
     try:
         report = build_comparison_report(answers)
     except Exception as e:
-        return render_template("error.html", message=f"Erreur: {str(e)[:200]}")
-    return render_template("report.html", report=report)
-
-
-
+        return render_template("error.html", message=f"Erreur rapport: {e}")
+    return render_template("report.html",
+        total=report.get("total_institutions", 0),
+        eligible=report.get("eligible_count", 0),
+        partial=report.get("partial_count", 0),
+        not_eligible=report.get("not_eligible_count", 0),
+        score=report.get("score", 0),
+        risk=report.get("risk", "N/A"),
+        max_amount=report.get("max_amount", 0),
+        sector=report.get("profil", {}).get("sector", "N/A"),
+        monthly_income=report.get("profil", {}).get("monthly_income", 0),
+        amount_wanted=report.get("profil", {}).get("amount_wanted", 0),
+        collateral="Oui" if report.get("profil", {}).get("collateral") else "Non",
+        business_reg="Oui" if report.get("profil", {}).get("business_registration") else "Non",
+        recommendations=report.get("top_recommendations", []),
+        all_comparisons=report.get("all_comparisons", []),
+        analysis=report.get("analysis", ""),
+        missing_documents=report.get("missing_documents", []),
+        improvement_tips=report.get("improvement_tips", []),
+    )
 
 @app.route("/api/documents/upload/<session_id>", methods=["POST"])
 def upload_document(session_id):
     if "file" not in request.files:
         return jsonify({"error": "Aucun fichier"}), 400
     file = request.files["file"]
-    doc_type = request.form.get("doc_type", "other")
-    if file.filename == "":
-        return jsonify({"error": "Fichier vide"}), 400
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
-    doc_id = str(uuid.uuid4())[:8]
-    filename = f"{session_id}_{doc_id}.{ext}"
-    filepath = os.path.join("/tmp", filename)
-    file.save(filepath)
-    storage_url = f"/uploads/{filename}"
+    doc_type = request.form.get("doc_type", "unknown")
+    data = file.read()
+    file_url = f"doc_{session_id}_{doc_type}_{uuid.uuid4().hex[:8]}"
     conn = get_db()
-    db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, storage_url))
+    db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, file_url))
     db_close(conn)
-    return jsonify({"document_id": doc_id, "storage_url": storage_url})
-
-@app.route("/api/debug/report/<session_id>")
-def debug_report(session_id):
-    try:
-        from credo_ai import build_comparison_report
-        conn = get_db()
-        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-        db_close(conn)
-        if not msgs:
-            return jsonify({"error": "no messages"})
-        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-        # Try _get_all_partners via the import that build_comparison_report uses internally
-        from credo_ai import _extract_country, _get_all_partners
-        country = _extract_country(answers)
-        p, pr = _get_all_partners(country)
-        report = build_comparison_report(answers)
-        return jsonify({
-            "extracted_country": country,
-            "get_all_partners_count": len(p),
-            "get_all_products_count": len(pr),
-            "partner_names": [x["name"] for x in p[:5]],
-            "report_top": report.get("top_recommendations", []),
-            "report_eligible": report.get("eligible_count", 0),
-            "report_partial": report.get("partial_count", 0),
-            "report_not_eligible": report.get("not_eligible_count", 0),
-            "report_score": report.get("score"),
-            "report_all": report.get("all_comparisons", []),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:500], "type": type(e).__name__}), 500
+    return jsonify({"status": "ok", "url": file_url})
 
 @app.route("/verify/<code>")
 def verify_code(code):
@@ -360,33 +311,37 @@ def verify_code(code):
     db_close(conn)
     if not result:
         return render_template("verify.html", code=code, valid=False)
-    partners_data = json.loads(result["partners"]) if result["partners"] else []
-    missing_docs = json.loads(result["missing_docs"]) if result["missing_docs"] else []
-    tips_data = json.loads(result["tips"]) if result["tips"] else []
-    return render_template("verify.html",
-        code=code, valid=True,
-        score=result["score"], max_amount=result["max_amount"], risk=result["risk"],
-        partners=partners_data, missing_docs=missing_docs, tips=tips_data,
-        phone=result["phone"][:3] + "XX" + result["phone"][-2:],
-        created_at=result["created_at"])
+    try:
+        partners_list = json.loads(result["partners"]) if result["partners"] else []
+        missing_docs = json.loads(result["missing_docs"]) if result["missing_docs"] else []
+        tips = json.loads(result["tips"]) if result["tips"] else []
+    except (json.JSONDecodeError, TypeError):
+        partners_list = []
+        missing_docs = []
+        tips = []
+    return render_template("verify.html", code=code, valid=True,
+        score=result["score"], max_amount=result["max_amount"],
+        risk=result["risk"], partners=partners_list,
+        missing_documents=missing_docs, tips=tips,
+        created_at=result["created_at"], phone=result["phone"],
+        session_status=result["session_status"])
 
 @app.route("/api/verify/<code>/update", methods=["POST"])
-def update_referral(code):
+def update_verify(code):
     data = request.json
-    new_status = data.get("status")
-    loan_amount = data.get("loan_amount")
-    if new_status not in ["contacted", "approved", "funded", "rejected"]:
-        return jsonify({"error": "Statut invalide"}), 400
     conn = get_db()
-    db_execute(conn, "UPDATE sessions SET status = %s, completed_at = NOW() WHERE code = %s", (new_status, code))
-    if new_status == "funded" and loan_amount:
-        db_execute(conn, "UPDATE results SET loan_amount = %s WHERE code = %s", (loan_amount, code))
+    r = db_fetchone(conn, "SELECT session_id FROM results WHERE code = %s", (code,))
+    if not r:
+        db_close(conn)
+        return jsonify({"error": "Code invalide"}), 404
+    db_execute(conn, "UPDATE sessions SET status = %s, payment_ref = %s, payment_verified = 1 WHERE id = %s",
+        (data.get("status", "completed"), data.get("payment_ref", ""), r["session_id"]))
     db_close(conn)
-    return jsonify({"success": True, "code": code, "status": new_status})
+    return jsonify({"ok": True})
 
 @app.route("/uploads/<filename>")
-def serve_upload(filename):
-    return send_from_directory("/tmp", filename)
+def uploaded_file(filename):
+    return send_from_directory("uploads", filename)
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
