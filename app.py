@@ -324,13 +324,24 @@ def upload_document(session_id):
 
 @app.route("/api/debug/partners")
 def debug_partners():
-    from credo_ai import _get_all_partners, _extract_country
-    import json
+    import json, os, psycopg2
     try:
-        p, pr = _get_all_partners("TG")
-        return jsonify({"partners": len(p), "products": len(pr), "names": [x["name"] for x in p[:10]]})
+        dsn = os.environ.get("NEON_DSN", "")
+        conn = psycopg2.connect(dsn)
+        cur = conn.cursor()
+        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")
+        tables = [r[0] for r in cur.fetchall()]
+        results = {"tables": tables}
+        for t in tables:
+            cur.execute(f"SELECT COUNT(*) FROM {t}")
+            results[t] = cur.fetchone()[0]
+        cur.execute("SELECT name, countries FROM partners LIMIT 5")
+        partners = [{"name": r[0], "countries": r[1]} for r in cur.fetchall()]
+        results["sample_partners"] = partners
+        conn.close()
+        return jsonify(results)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)[:500]}), 500
 
 @app.route("/verify/<code>")
 def verify_code(code):
