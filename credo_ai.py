@@ -344,11 +344,12 @@ def build_questionnaire(project_desc: str) -> list[str]:
             sector_hint = w
             break
     try:
-        all_partners, all_products = _get_all_partners()
+        all_partners, all_products, all_rules = _get_all_partners()
     except Exception:
-        all_partners, all_products = _get_partners(amount_hint, sector_hint)
+        all_partners, all_products, all_rules = _get_partners(amount_hint, sector_hint)
     partners = all_partners or []
     products = all_products or []
+    rules = all_rules or []
 
     partners_ctx = "\n".join(
         f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}. Docs requis: {', '.join(p['docs'] or [])}."
@@ -442,11 +443,12 @@ def _build_questionnaire_blocks(project_desc: str) -> dict:
             break
     _log(f"build_questionnaire_blocks: step 2 get_partners hint={amount_hint} sector={sector_hint}")
     try:
-        all_partners, all_products = _get_all_partners()
+        all_partners, all_products, all_rules = _get_all_partners()
     except Exception:
-        all_partners, all_products = _get_partners(amount_hint, sector_hint)
+        all_partners, all_products, all_rules = _get_partners(amount_hint, sector_hint)
     partners = all_partners or []
     products = all_products or []
+    rules = all_rules or []
     _log(f"build_questionnaire_blocks: got {len(partners)} partners, {len(products)} products")
 
     _log("build_questionnaire_blocks: step 3 format context")
