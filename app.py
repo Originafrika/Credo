@@ -333,26 +333,21 @@ def debug_report(session_id):
             return jsonify({"error": "no messages"})
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
         # Try _get_all_partners via the import that build_comparison_report uses internally
-        import os, psycopg2
-        dsn = os.environ.get("NEON_DSN", "")
-        try:
-            conn2 = psycopg2.connect(dsn)
-            cur = conn2.cursor()
-            cur.execute("SELECT name, countries, min_amount, max_amount, sectors FROM partners WHERE 'TG' = ANY(countries) ORDER BY name")
-            direct = []
-            for r in cur.fetchall():
-                direct.append({"name": r[0], "countries": r[1], "min_amount": r[2], "max_amount": r[3], "sectors": r[4]})
-            conn2.close()
-        except Exception as e2:
-            direct = [f"DB error: {e2}"]
+        from credo_ai import _extract_country, _get_all_partners
+        country = _extract_country(answers)
+        p, pr = _get_all_partners(country)
         report = build_comparison_report(answers)
         return jsonify({
-            "direct_tg": direct,
+            "extracted_country": country,
+            "get_all_partners_count": len(p),
+            "get_all_products_count": len(pr),
+            "partner_names": [x["name"] for x in p[:5]],
             "report_top": report.get("top_recommendations", []),
             "report_eligible": report.get("eligible_count", 0),
             "report_partial": report.get("partial_count", 0),
             "report_not_eligible": report.get("not_eligible_count", 0),
             "report_score": report.get("score"),
+            "report_all": report.get("all_comparisons", []),
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:500], "type": type(e).__name__}), 500
