@@ -671,12 +671,14 @@ Retourne CE JSON:
 }}
 
 Regles:
-- Max 3 documents. Prioritaires: ceux qui debloquent le plus de partenaires.
+- Prioritaires: ceux qui debloquent le plus de partenaires.
 - Si le profil est informel: photo_activite et id_card sont les plus utiles.
 - Si le profil a des garanties: photo garantie ou titre de propriete.
 - Si le profil a un RC/patente: business_license.
+- Si le profil a deja un historique credit: relevé bancaire ou preuve.
 - Chaque document doit avoir un label clair en francais, "tu".
-- optional: true si le document est utile mais pas bloquant."""
+- optional: true si le document est utile mais pas bloquant.
+- Ne demande que les documents vraiment pertinents pour CE profil precis et CES partenaires."""
 
     try:
         resp = client.chat.completions.create(
@@ -684,13 +686,13 @@ Regles:
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=600,
+            max_tokens=800,
         )
         data = json.loads(resp.choices[0].message.content)
         requests = data.get("requests", [])
         if isinstance(requests, list) and len(requests) > 0:
             _log(f"build_document_requests: {len(requests)} documents demandes")
-            return requests[:3]
+            return requests
     except Exception as e:
         _log(f"build_document_requests failed: {e}")
     return []
