@@ -424,6 +424,8 @@ Genere un questionnaire en BLOCS. Chaque bloc = 2 a 4 questions sur UN theme.
 
 
 
+_last_questions: list[str] = []
+
 def build_next_question(answers: list[dict]) -> str:
     """LLM decide: infos suffisantes (DONE), clarification, ou demande document."""
     context = _compact_history(answers)
@@ -444,7 +446,18 @@ Sinon, pose UNE question courte. Max 12 mots. Naturel, en "tu"."""
     )
     q = resp.choices[0].message.content.strip().strip('"').strip("'")
     if "DONE" in q.upper() and len(q) < 10:
+        _last_questions.clear()
         return "DONE"
+
+    # Loop detection: same question asked 2+ times → force DONE
+    global _last_questions
+    if len(_last_questions) >= 2 and all(q == prev for prev in _last_questions[-2:]):
+        _last_questions.clear()
+        return "DONE"
+    _last_questions.append(q)
+    if len(_last_questions) > 10:
+        _last_questions.pop(0)
+
     return q if q else "Peux-tu preciser ?"
 
 # ==============================================================
