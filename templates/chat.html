@@ -20,6 +20,9 @@
   --gray-mid: oklch(0.5 0.01 60);
   --gray-light: oklch(0.85 0.01 60);
   --success: oklch(0.62 0.18 145);
+  --error: oklch(0.55 0.22 30);
+  --warn: oklch(0.7 0.15 85);
+  --danger: oklch(0.5 0.2 25);
   --font-display: 'Space Grotesk', sans-serif;
   --font-body: 'DM Sans', sans-serif;
 }
@@ -245,11 +248,18 @@ label { display: block; }
 
   <!-- Step: Upload -->
   <div id="step-upload" class="step card">
-    <h2 class="section-title">Documents requis</h2>
+    <h2 class="section-title">Documents (optionnel)</h2>
+    <p class="text-gray text-sm mb-2">Ajoute une pièce d'identité, preuve de revenus, etc. pour renforcer ton dossier.</p>
     <div class="upload-zone" onclick="document.getElementById('file-input').click()">
-      <p style="margin-bottom:0.25rem">Clique pour uploader</p>
-      <small>Pièce d'identité, preuve de revenus, etc.</small>
-      <input type="file" id="file-input" class="hidden" multiple style="display:none">
+      <p style="margin-bottom:0.25rem">Clique pour ajouter des fichiers</p>
+      <small>PDF, JPG, PNG — max 5 Mo</small>
+      <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none" onchange="uploadFiles(this)">
+    </div>
+    <div id="file-list" style="margin-top:0.75rem"></div>
+    <div id="upload-error" class="text-sm" style="color:var(--error);margin-top:0.5rem;display:none"></div>
+    <div style="margin-top:1.5rem;display:flex;gap:0.5rem">
+      <button onclick="analyze()" id="btn-continue" class="btn btn-primary">Voir mon rapport</button>
+      <button onclick="analyze()" class="btn btn-outline" style="flex:0">Passer</button>
     </div>
   </div>
 
@@ -319,10 +329,21 @@ function showMsg(role, text) {
   m.scrollTop = m.scrollHeight;
 }
 
+function showError(msg) {
+  var m = document.getElementById('messages');
+  if (m) {
+    m.innerHTML += '<div class="msg-ia" style="background:oklch(0.95 0.04 30)"><div class="sender" style="color:var(--error)">Erreur</div><div class="text">' + escHtml(msg) + '</div></div>';
+    m.scrollTop = m.scrollHeight;
+  } else {
+    alert(msg);
+  }
+}
+
 function startSession() {
   var plan = document.querySelector('input[name="plan"]:checked').value;
   var phone = document.getElementById('phone').value;
-  if (!phone) { alert('Numero requis'); return; }
+  if (!phone) { showError('Numero de telephone requis'); return; }
+  if (!/^[0-9\s\+]{8,15}$/.test(phone.replace(/\s/g, ''))) { showError('Numero invalide (ex: 90 00 00 00)'); return; }
 
   setLoading('btn-start', true);
   fetch('/api/session/start', {
@@ -343,7 +364,7 @@ function startSession() {
     document.getElementById('chat-input').focus();
   }).catch(function () {
     setLoading('btn-start', false);
-    alert('Erreur de connexion. Reessaie.');
+    showError('Erreur de connexion. Reessaie.');
   });
 }
 
@@ -352,7 +373,7 @@ function updateProgress() {
   var done = Math.min(qIdx, total);
   var pct = Math.round((done / total) * 100);
   document.getElementById('progress-fill').style.width = pct + '%';
-  document.getElementById('progress-label').textContent = 'Progres : ' + done + '/' + total;
+  document.getElementById('progress-label').textContent = 'Progrès : ' + done + '/' + total;
 }
 
 function sendMessage() {
@@ -381,18 +402,16 @@ function sendMessage() {
       } else if (data.question) {
         setTimeout(function () { showMsg('ia', data.question); }, 600);
       } else if (data.done) {
-        analyze();
+        finishChat();
       } else {
         setTimeout(function () { showMsg('ia', 'ok, on termine avec ca.'); }, 600);
-        analyze();
+        finishChat();
       }
     }).catch(function () {
       setLoading('btn-send', false);
       setTimeout(function () { showMsg('ia', 'Questionnaire pret. Reponds aux questions suivantes.'); }, 600);
-      // fallback to static questions
     });
   } else if (qIdx <= questions.length) {
-    // Answering generated questions one by one
     setLoading('btn-send', true);
     fetch('/api/chat/' + sessionId + '/message', {
       method: 'POST',
@@ -402,42 +421,82 @@ function sendMessage() {
       setLoading('btn-send', false);
       if (data.question && !data.done) {
         if (data.question === 'DONE') {
-          analyze();
+          finishChat();
         } else {
           setTimeout(function () { showMsg('ia', data.question); }, 400);
         }
       } else if (data.done) {
-        analyze();
+        finishChat();
       } else if (qIdx < questions.length) {
         setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; updateProgress(); }, 500);
       } else {
-        analyze();
+        finishChat();
       }
     }).catch(function () {
       setLoading('btn-send', false);
       if (qIdx < questions.length) {
         setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; updateProgress(); }, 500);
       } else {
-        analyze();
+        finishChat();
       }
     });
   } else {
-    analyze();
+    finishChat();
   }
 }
 
+var uploadedFiles = [];
+
+function uploadFiles(input) {
+  var files = input.files;
+  if (!files.length) return;
+  var list = document.getElementById('file-list');
+  var err = document.getElementById('upload-error');
+  err.style.display = 'none';
+  Array.from(files).forEach(function (file) {
+    if (file.size > 5 * 1024 * 1024) {
+      err.textContent = file.name + ' depasse 5 Mo';
+      err.style.display = 'block';
+      return;
+    }
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('doc_type', file.type.startsWith('image/') ? 'id_card' : 'document');
+    fetch('/api/documents/upload/' + sessionId, {
+      method: 'POST',
+      body: fd
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.status === 'ok') {
+        uploadedFiles.push(d.filename);
+        list.innerHTML += '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem;background:var(--amber-bg);border-radius:8px;margin-bottom:0.35rem;font-size:0.85rem"><span style="color:var(--success)">✓</span> ' + escHtml(file.name) + '</div>';
+      } else {
+        err.textContent = 'Erreur: ' + file.name;
+        err.style.display = 'block';
+      }
+    }).catch(function () {
+      err.textContent = 'Erreur upload: ' + file.name;
+      err.style.display = 'block';
+    });
+  });
+  input.value = '';
+}
+
+function finishChat() {
+  switchStep('step-upload');
+}
+
 function analyze() {
-  setLoading('btn-send', true);
+  setLoading('btn-continue', true);
   fetch('/api/chat/' + sessionId + '/analyze', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'}
   }).then(function (r) { return r.json(); }).then(function (data) {
-    setLoading('btn-send', false);
+    setLoading('btn-continue', false);
     switchStep('step-result');
     renderResult(data);
   }).catch(function () {
-    setLoading('btn-send', false);
-    alert('Erreur lors de l analyse. Reessaie.');
+    setLoading('btn-continue', false);
+    alert('Erreur lors de l\'analyse. Reessaie.');
   });
 }
 

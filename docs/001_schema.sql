@@ -58,7 +58,7 @@ CREATE TABLE loan_products (
 CREATE TABLE credit_scores (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id UUID REFERENCES profiles(id),
-  score INT NOT NULL CHECK (score >= 0 AND score <= 1000),
+  score INT NOT NULL CHECK (score >= 0 AND score <= 100),
   model_version TEXT NOT NULL,
   factors JSONB,                  -- {"revenue_weight": 0.35, "sector_weight": 0.15, ...}
   confidence DECIMAL(3,2) CHECK (confidence >= 0 AND confidence <= 1),

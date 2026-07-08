@@ -31,7 +31,8 @@ app.json_encoder = _JsonEncoder
 
 NEON_DSN = os.environ.get("NEON_DSN", "")
 if not NEON_DSN:
-    print("[CREDO] WARNING: NEON_DSN not set — running with mock data", flush=True)
+    print("[CREDO] FATAL: NEON_DSN not set", flush=True)
+    raise SystemExit(1)
 
 def get_db():
     if not NEON_DSN:
@@ -68,19 +69,7 @@ def init_db():
         "CREATE TABLE IF NOT EXISTS results (id SERIAL PRIMARY KEY, session_id TEXT UNIQUE, score INTEGER, risk TEXT, max_amount INTEGER, partners TEXT, missing_docs TEXT, tips TEXT, code TEXT UNIQUE, loan_amount INTEGER, analysis TEXT, created_at TEXT DEFAULT NOW())",
     ]:
         db_execute(conn, sql)
-    conn.close()
-
-init_db()
-
-_migrated = False
-
-@app.before_request
-def ensure_migration():
-    global _migrated
-    if _migrated:
-        return
     try:
-        conn = get_db()
         db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS questionnaire TEXT")
         db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS question_idx INTEGER DEFAULT 0")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS max_amount INTEGER DEFAULT 0")
@@ -88,11 +77,12 @@ def ensure_migration():
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS tips TEXT")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS analysis TEXT")
         db_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_results_session ON results(session_id)")
-        db_close(conn)
-        _migrated = True
         print("[CREDO] migration ok", flush=True)
     except Exception as e:
-        print(f"[CREDO] migration failed: {e}", flush=True)
+        print(f"[CREDO] migration note: {e}", flush=True)
+    conn.close()
+
+init_db()
 
 @app.route("/api/questions")
 def get_questions():
@@ -159,18 +149,27 @@ def chat_session(session_id):
 
 @app.route("/api/chat/<session_id>/resume")
 def resume_session(session_id):
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    if not s:
+    try:
+        conn = get_db()
+    except Exception as e:
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return jsonify({"error": "Service indisponible"}), 503
+    try:
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        if not s:
+            db_close(conn)
+            return jsonify({"error": "Session invalide"}), 404
+        last = db_fetchone(conn, "SELECT question FROM messages WHERE session_id = %s AND role = 'ia' ORDER BY id DESC LIMIT 1", (session_id,))
+        count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
         db_close(conn)
-        return jsonify({"error": "Session invalide"}), 404
-    last = db_fetchone(conn, "SELECT question FROM messages WHERE session_id = %s AND role = 'ia' ORDER BY id DESC LIMIT 1", (session_id,))
-    count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
-    db_close(conn)
-    return jsonify({
-        "question": last["question"] if last else build_first_question(),
-        "done": False,
-    })
+        return jsonify({
+            "question": last["question"] if last else build_first_question(),
+            "done": False,
+        })
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error in resume_session: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de la récupération"}), 500
 
 @app.route("/api/session/start", methods=["POST"])
 def start_session():
@@ -178,12 +177,21 @@ def start_session():
     phone = data.get("phone", "")
     plan = data.get("plan", "2500")
     session_id = uuid.uuid4().hex[:8]
-    conn = get_db()
-    db_execute(conn, "INSERT INTO sessions (id, phone, plan) VALUES (%s, %s, %s)", (session_id, phone, plan))
-    first_q = build_first_question()
-    db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, first_q))
-    db_close(conn)
-    return jsonify({"session_id": session_id, "first_question": first_q})
+    try:
+        conn = get_db()
+    except Exception as e:
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return jsonify({"error": "Service indisponible"}), 503
+    try:
+        db_execute(conn, "INSERT INTO sessions (id, phone, plan) VALUES (%s, %s, %s)", (session_id, phone, plan))
+        first_q = build_first_question()
+        db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, first_q))
+        db_close(conn)
+        return jsonify({"session_id": session_id, "first_question": first_q})
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error in start_session: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de la création"}), 500
 
 @app.route("/api/chat/<session_id>/message", methods=["POST"])
 def chat_message(session_id):
@@ -191,17 +199,24 @@ def chat_message(session_id):
     answer = data.get("answer", "").strip()
     if not answer:
         return jsonify({"error": "Reponse vide"}), 400
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    if not s:
+    try:
+        conn = get_db()
+    except Exception as e:
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return jsonify({"error": "Service indisponible"}), 503
+    try:
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        if not s:
+            db_close(conn)
+            return jsonify({"error": "Session invalide"}), 404
+        last = db_fetchone(conn, "SELECT question FROM messages WHERE session_id = %s AND role = 'ia' ORDER BY id DESC LIMIT 1", (session_id,))
+        last_q = last["question"] if last else "Question"
+        db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, last_q, answer))
+        user_count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
+    except Exception as e:
         db_close(conn)
-        return jsonify({"error": "Session invalide"}), 404
-
-    last = db_fetchone(conn, "SELECT question FROM messages WHERE session_id = %s AND role = 'ia' ORDER BY id DESC LIMIT 1", (session_id,))
-    last_q = last["question"] if last else "Question"
-    db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, last_q, answer))
-
-    user_count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
+        print(f"[CREDO] DB error in chat_message: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de l'enregistrement"}), 500
 
     if user_count and user_count["c"] == 1:
         try:
@@ -219,14 +234,24 @@ def chat_message(session_id):
             db_close(conn)
             return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
 
-    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+    try:
+        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error fetching messages: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de la récupération"}), 500
     answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
     try:
         next_q = build_next_question(answers)
     except Exception:
         db_close(conn)
         return jsonify({"error": "Credo IA indisponible."}), 503
-    db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, next_q))
+    try:
+        db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, next_q))
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error inserting next question: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de l'enregistrement"}), 500
     db_close(conn)
     if next_q == "DONE":
         return jsonify({"done": True})
@@ -239,19 +264,28 @@ def submit_questionnaire(session_id):
     questions_list = data.get("questions", [])
     if not answers_list or not isinstance(answers_list, list):
         return jsonify({"error": "Reponses invalides"}), 400
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    if not s:
+    try:
+        conn = get_db()
+    except Exception as e:
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return jsonify({"error": "Service indisponible"}), 503
+    try:
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        if not s:
+            db_close(conn)
+            return jsonify({"error": "Session invalide"}), 404
+        for i, ans in enumerate(answers_list):
+            if not ans or not ans.strip():
+                continue
+            q_text = questions_list[i] if i < len(questions_list) else "Question {}".format(i + 1)
+            db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, q_text, ans.strip()))
+        db_execute(conn, "UPDATE sessions SET questionnaire = NULL, question_idx = 0 WHERE id = %s", (session_id,))
         db_close(conn)
-        return jsonify({"error": "Session invalide"}), 404
-    for i, ans in enumerate(answers_list):
-        if not ans or not ans.strip():
-            continue
-        q_text = questions_list[i] if i < len(questions_list) else "Question {}".format(i + 1)
-        db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, q_text, ans.strip()))
-    db_execute(conn, "UPDATE sessions SET questionnaire = NULL, question_idx = 0 WHERE id = %s", (session_id,))
-    db_close(conn)
-    return jsonify({"done": True, "accepted": len([a for a in answers_list if a and a.strip()])})
+        return jsonify({"done": True, "accepted": len([a for a in answers_list if a and a.strip()])})
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error in submit_questionnaire: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de l'enregistrement"}), 500
 
 @app.route("/api/chat/<session_id>/analyze", methods=["POST"])
 def analyze(session_id):
@@ -296,128 +330,181 @@ def analyze(session_id):
 
 @app.route("/api/chat/<session_id>/result")
 def get_result(session_id):
-    conn = get_db()
-    result = db_fetchone(conn, "SELECT * FROM results WHERE session_id = %s", (session_id,))
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    db_close(conn)
-    if not result:
-        return jsonify({"error": "Analyse non trouvee"}), 404
-    return jsonify({
-        "score": result["score"],
-        "risk": result["risk"],
-        "max_amount": result["max_amount"],
-        "partners": json.loads(result["partners"]),
-        "missing_documents": json.loads(result["missing_docs"]),
-        "tips": json.loads(result["tips"]),
-        "code": result["code"],
-        "analysis": result["analysis"],
-        "plan": s["plan"] if s else "2500",
-    })
+    try:
+        conn = get_db()
+    except Exception as e:
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return jsonify({"error": "Service indisponible"}), 503
+    try:
+        result = db_fetchone(conn, "SELECT * FROM results WHERE session_id = %s", (session_id,))
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        db_close(conn)
+        if not result:
+            return jsonify({"error": "Analyse non trouvee"}), 404
+        return jsonify({
+            "score": result["score"],
+            "risk": result["risk"],
+            "max_amount": result["max_amount"],
+            "partners": json.loads(result["partners"]),
+            "missing_documents": json.loads(result["missing_docs"]),
+            "tips": json.loads(result["tips"]),
+            "code": result["code"],
+            "analysis": result["analysis"],
+            "plan": s["plan"] if s else "2500",
+        })
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error in get_result: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de la récupération"}), 500
 
 @app.route("/api/chat/<session_id>/report")
 def api_report(session_id):
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    if not s:
-        db_close(conn)
-        return jsonify({"error": "Session invalide"}), 404
-    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-    db_close(conn)
-    answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
     try:
-        report = build_comparison_report(answers)
+        conn = get_db()
     except Exception as e:
-        return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
-    return jsonify(report)
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return jsonify({"error": "Service indisponible"}), 503
+    try:
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        if not s:
+            db_close(conn)
+            return jsonify({"error": "Session invalide"}), 404
+        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+        db_close(conn)
+        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        try:
+            report = build_comparison_report(answers)
+        except Exception as e:
+            return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
+        return jsonify(report)
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error in api_report: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de la récupération"}), 500
 
 @app.route("/report/<session_id>")
 def view_report(session_id):
-    conn = get_db()
-    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-    if not s:
-        db_close(conn)
-        return render_template("error.html", message="Session invalide")
-    msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-    db_close(conn)
-    answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
     try:
-        report = build_comparison_report(answers)
+        conn = get_db()
     except Exception as e:
-        return render_template("error.html", message=f"Erreur rapport: {e}")
-    l2 = report.get("layer2", {})
-    return render_template("report.html",
-        total=report.get("total_institutions", 0),
-        eligible=report.get("eligible_count", 0),
-        partial=report.get("partial_count", 0),
-        not_eligible=report.get("not_eligible_count", 0),
-        score=report.get("score", 0),
-        risk=report.get("risk", "N/A"),
-        max_amount=report.get("max_amount", 0),
-        realistic_max=report.get("profil", {}).get("realistic_max", 0),
-        sector=report.get("profil", {}).get("sector", "N/A"),
-        monthly_income=report.get("profil", {}).get("monthly_income", 0),
-        amount_wanted=report.get("profil", {}).get("amount_wanted", 0),
-        collateral="Oui" if report.get("profil", {}).get("collateral") else "Non",
-        business_reg="Oui" if report.get("profil", {}).get("business_registration") else "Non",
-        recommendations=report.get("top_recommendations", []),
-        all_comparisons=report.get("all_comparisons", []),
-        analysis=report.get("analysis", ""),
-        missing_documents=report.get("missing_documents", []),
-        improvement_tips=report.get("improvement_tips", []),
-        layer2_summary=l2.get("summary", ""),
-        layer2_best_match=l2.get("best_match", ""),
-        layer2_best_reason=l2.get("best_reason", ""),
-        layer2_recs=l2.get("recommendations", [])[:3],
-    )
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return render_template("error.html", message="Service indisponible")
+    try:
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        if not s:
+            db_close(conn)
+            return render_template("error.html", message="Session invalide")
+        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+        db_close(conn)
+        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        try:
+            report = build_comparison_report(answers)
+        except Exception as e:
+            return render_template("error.html", message=f"Erreur rapport: {e}")
+        l2 = report.get("layer2", {})
+        return render_template("report.html",
+            total=report.get("total_institutions", 0),
+            eligible=report.get("eligible_count", 0),
+            partial=report.get("partial_count", 0),
+            not_eligible=report.get("not_eligible_count", 0),
+            score=report.get("score", 0),
+            risk=report.get("risk", "N/A"),
+            max_amount=report.get("max_amount", 0),
+            realistic_max=report.get("profil", {}).get("realistic_max", 0),
+            sector=report.get("profil", {}).get("sector", "N/A"),
+            monthly_income=report.get("profil", {}).get("monthly_income", 0),
+            amount_wanted=report.get("profil", {}).get("amount_wanted", 0),
+            collateral="Oui" if report.get("profil", {}).get("collateral") else "Non",
+            business_reg="Oui" if report.get("profil", {}).get("business_registration") else "Non",
+            recommendations=report.get("top_recommendations", []),
+            all_comparisons=report.get("all_comparisons", []),
+            analysis=report.get("analysis", ""),
+            missing_documents=report.get("missing_documents", []),
+            improvement_tips=report.get("improvement_tips", []),
+            layer2_summary=l2.get("summary", ""),
+            layer2_best_match=l2.get("best_match", ""),
+            layer2_best_reason=l2.get("best_reason", ""),
+            layer2_recs=l2.get("recommendations", [])[:3],
+        )
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error in view_report: {e}", flush=True)
+        return render_template("error.html", message="Erreur lors du chargement du rapport")
 
 @app.route("/api/documents/upload/<session_id>", methods=["POST"])
 def upload_document(session_id):
-    if "file" not in request.files:
-        return jsonify({"error": "Aucun fichier"}), 400
-    file = request.files["file"]
-    doc_type = request.form.get("doc_type", "unknown")
-    data = file.read()
-    file_url = f"doc_{session_id}_{doc_type}_{uuid.uuid4().hex[:8]}"
-    conn = get_db()
-    db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, file_url))
-    db_close(conn)
-    return jsonify({"status": "ok", "url": file_url})
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "Aucun fichier"}), 400
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "Fichier vide"}), 400
+        doc_type = request.form.get("doc_type", "unknown")
+        ext = os.path.splitext(file.filename)[1] or ".bin"
+        file_name = f"doc_{session_id}_{doc_type}_{uuid.uuid4().hex[:8]}{ext}"
+        os.makedirs("uploads", exist_ok=True)
+        file.save(os.path.join("uploads", file_name))
+        conn = get_db()
+        db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, file_name))
+        db_close(conn)
+        return jsonify({"status": "ok", "filename": file_name})
+    except Exception as e:
+        print(f"[CREDO] upload error: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de l'upload"}), 500
 
 @app.route("/verify/<code>")
 def verify_code(code):
-    conn = get_db()
-    result = db_fetchone(conn,
-        "SELECT r.score, r.max_amount, r.risk, r.code, r.partners, r.missing_docs, r.tips, r.created_at, s.phone, s.status as session_status FROM results r JOIN sessions s ON r.session_id = s.id WHERE r.code = %s", (code,))
-    db_close(conn)
-    if not result:
-        return render_template("verify.html", code=code, valid=False)
     try:
-        partners_list = json.loads(result["partners"]) if result["partners"] else []
-        missing_docs = json.loads(result["missing_docs"]) if result["missing_docs"] else []
-        tips = json.loads(result["tips"]) if result["tips"] else []
-    except (json.JSONDecodeError, TypeError):
-        partners_list = []
-        missing_docs = []
-        tips = []
-    return render_template("verify.html", code=code, valid=True,
-        score=result["score"], max_amount=result["max_amount"],
-        risk=result["risk"], partners=partners_list,
-        missing_documents=missing_docs, tips=tips,
-        created_at=result["created_at"], phone=result["phone"],
-        session_status=result["session_status"])
+        conn = get_db()
+    except Exception as e:
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return render_template("error.html", message="Service indisponible")
+    try:
+        result = db_fetchone(conn,
+            "SELECT r.score, r.max_amount, r.risk, r.code, r.partners, r.missing_docs, r.tips, r.created_at, s.phone, s.status as session_status FROM results r JOIN sessions s ON r.session_id = s.id WHERE r.code = %s", (code,))
+        db_close(conn)
+        if not result:
+            return render_template("verify.html", code=code, valid=False)
+        try:
+            partners_list = json.loads(result["partners"]) if result["partners"] else []
+            missing_docs = json.loads(result["missing_docs"]) if result["missing_docs"] else []
+            tips = json.loads(result["tips"]) if result["tips"] else []
+        except (json.JSONDecodeError, TypeError):
+            partners_list = []
+            missing_docs = []
+            tips = []
+        return render_template("verify.html", code=code, valid=True,
+            score=result["score"], max_amount=result["max_amount"],
+            risk=result["risk"], partners=partners_list,
+            missing_documents=missing_docs, tips=tips,
+            created_at=result["created_at"], phone=result["phone"],
+            session_status=result["session_status"])
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error in verify_code: {e}", flush=True)
+        return render_template("error.html", message="Erreur lors de la vérification")
 
 @app.route("/api/verify/<code>/update", methods=["POST"])
 def update_verify(code):
     data = request.json
-    conn = get_db()
-    r = db_fetchone(conn, "SELECT session_id FROM results WHERE code = %s", (code,))
-    if not r:
+    try:
+        conn = get_db()
+    except Exception as e:
+        print(f"[CREDO] DB connection error: {e}", flush=True)
+        return jsonify({"error": "Service indisponible"}), 503
+    try:
+        r = db_fetchone(conn, "SELECT session_id FROM results WHERE code = %s", (code,))
+        if not r:
+            db_close(conn)
+            return jsonify({"error": "Code invalide"}), 404
+        db_execute(conn, "UPDATE sessions SET status = %s, payment_ref = %s, payment_verified = 1 WHERE id = %s",
+            (data.get("status", "completed"), data.get("payment_ref", ""), r["session_id"]))
         db_close(conn)
-        return jsonify({"error": "Code invalide"}), 404
-    db_execute(conn, "UPDATE sessions SET status = %s, payment_ref = %s, payment_verified = 1 WHERE id = %s",
-        (data.get("status", "completed"), data.get("payment_ref", ""), r["session_id"]))
-    db_close(conn)
-    return jsonify({"ok": True})
+        return jsonify({"ok": True})
+    except Exception as e:
+        db_close(conn)
+        print(f"[CREDO] DB error in update_verify: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de la mise à jour"}), 500
 
 @app.route("/uploads/<filename>")
 def uploaded_file(filename):

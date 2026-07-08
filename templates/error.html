@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Credo — Erreur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --amber: oklch(0.68 0.18 75);
+  --amber-deep: oklch(0.55 0.2 75);
+  --surface: oklch(0.99 0.003 75);
+  --cream: oklch(0.975 0.008 75);
+  --charcoal: oklch(0.15 0.01 60);
+  --gray-mid: oklch(0.5 0.01 60);
+  --error: oklch(0.55 0.22 30);
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body);
+  background: var(--cream);
+  color: var(--charcoal);
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-font-smoothing: antialiased;
+}
+.card {
+  max-width: 420px; width: 100%; margin: 2rem;
+  background: var(--surface); border-radius: 16px; padding: 2.5rem;
+  text-align: center;
+}
+.icon {
+  width: 56px; height: 56px;
+  background: oklch(0.95 0.04 30);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 1rem;
+}
+.icon svg { width: 28px; height: 28px; stroke: var(--error); fill: none; stroke-width: 2; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.25rem; margin-bottom: 0.75rem; }
+p { font-size: 0.95rem; color: var(--gray-mid); margin-bottom: 1.5rem; line-height: 1.6; }
+.btn {
+  display: inline-block; border-radius: 10px; padding: 0.75rem 2rem;
+  font-family: var(--font-display); font-weight: 600; font-size: 1rem;
+  background: var(--amber); color: white; text-decoration: none;
+  transition: background 0.2s;
+}
+.btn:hover { background: var(--amber-deep); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">
+    <svg viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+  </div>
+  <h1>Oups</h1>
+  <p>{{ message }}</p>
+  <a href="/" class="btn">Retour à l'accueil</a>
+</div>
+</body>
+</html>

@@ -3,3 +3,4 @@ docs/ASSETS.md
 .vercel
 __pycache__/
 *.pyc
+uploads/
