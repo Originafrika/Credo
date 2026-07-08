@@ -341,8 +341,8 @@ def debug_partners():
         cur.execute("SELECT name, countries FROM partners LIMIT 10")
         partners = [{"name": r[0], "countries": r[1]} for r in cur.fetchall()]
         results["sample_partners"] = partners
-        cur.execute("SELECT name, countries FROM partners WHERE 'TG' = ANY(countries) LIMIT 5")
-        tg = [{"name": r[0], "countries": r[1]} for r in cur.fetchall()]
+        cur.execute("SELECT name, min_amount, max_amount, sectors FROM partners WHERE 'TG' = ANY(countries) LIMIT 10")
+        tg = [{"name": r[0], "min": r[1], "max": r[2], "sectors": r[3]} for r in cur.fetchall()]
         results["tg_partners"] = tg
         conn.close()
         return jsonify(results)
