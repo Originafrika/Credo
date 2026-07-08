@@ -155,6 +155,44 @@ def _compute_realistic_max(monthly_revenue: int, has_collateral: bool, amount_wa
 # SCORING
 # ==============================================================
 
+def _extract_activity_duration(answers: list[dict]) -> tuple[int, str]:
+    for a in answers:
+        q = (a.get("q") or "").lower()
+        r = (a.get("a") or "").lower()
+        if "combien de temps" in q or "depuis combien" in q:
+            nums = _extract_numbers(r)
+            if nums:
+                v = nums[0]
+                if any(w in r for w in ["mois"]):
+                    return v, "mois"
+                if any(w in r for w in ["an", "annee", "ans"]):
+                    return v * 12, "ans"
+                return v, "mois"
+    return 0, ""
+
+
+def _extract_credit_history(answers: list[dict]) -> str:
+    for a in answers:
+        q = (a.get("q") or "").lower()
+        r = (a.get("a") or "").lower()
+        if "deja eu un credit" in q or "historique" in q:
+            if any(w in r for w in ["oui", "deja", "rembourse"]):
+                if any(w in r for w in ["bien", "rembourse", "temps"]):
+                    return "bon"
+                return "moyen"
+            return "aucun"
+    return "non precise"
+
+
+def _extract_savings(answers: list[dict]) -> bool:
+    for a in answers:
+        q = (a.get("q") or "").lower()
+        r = (a.get("a") or "").lower()
+        if "epargne" in q:
+            return any(w in r for w in ["oui", "epargne", "compte", "economie"])
+    return False
+
+
 def score_from_answers(answers: list[dict]) -> dict:
     description = ""
     for a in answers:
@@ -163,6 +201,9 @@ def score_from_answers(answers: list[dict]) -> dict:
 
     monthly_income = _estimate_monthly_revenue(answers)
     amount_wanted = _extract_amount_wanted(description, answers)
+    duration_months, duration_unit = _extract_activity_duration(answers)
+    credit_history = _extract_credit_history(answers)
+    has_savings = _extract_savings(answers)
 
     has_collateral = False
     for a in answers:
@@ -172,14 +213,28 @@ def score_from_answers(answers: list[dict]) -> dict:
         if "garantie" in r and ("terrain" in r or "boutique" in r or "maison" in r or "vehicule" in r or "oui" in r or "iphone" in r):
             has_collateral = True
 
-    realistic_max = _compute_realistic_max(monthly_income, has_collateral, amount_wanted)
-    risk = "Eleve"
-    if has_collateral and monthly_income >= 200000:
-        risk = "Moyen"
-    if has_collateral and monthly_income >= 500000:
-        risk = "Faible"
+    business_reg = _extract_business_registration(answers)
+    sector = _extract_sector(answers)
 
-    prompt = _build_groq_prompt(answers, monthly_income, amount_wanted, has_collateral, realistic_max, risk)
+    realistic_max = _compute_realistic_max(monthly_income, has_collateral, amount_wanted)
+
+    # Risk preliminaire multi-facteurs
+    risk = "Eleve"
+    if monthly_income >= 200000:
+        risk = "Moyen"
+    if monthly_income >= 500000 and has_collateral:
+        risk = "Faible"
+    if monthly_income >= 1000000:
+        risk = "Faible"
+    if credit_history == "bon" and risk == "Moyen":
+        risk = "Faible"
+    if duration_months >= 12:
+        if risk == "Eleve":
+            risk = "Moyen"
+
+    prompt = _build_groq_prompt(answers, monthly_income, amount_wanted, has_collateral,
+                                realistic_max, risk, sector, duration_months,
+                                credit_history, has_savings, business_reg)
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -196,35 +251,58 @@ def score_from_answers(answers: list[dict]) -> dict:
     return data
 
 
-def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool, realistic_max: int, risk_label: str) -> str:
+def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool,
+                       realistic_max: int, risk_label: str, sector: str,
+                       duration_months: int, credit_history: str,
+                       has_savings: bool, business_reg: bool) -> str:
     compacted = _compact_history(answers)
     qa = "\n".join(f"- {a.get('q', '')}: {a.get('a', '')}" for a in compacted)
 
-    return f"""Tu es un analyste de credit pour le marche UEMOA. Analyse CE profil precis.
+    ratio = round((wanted / income) * 100) if income > 0 else 0
+
+    return f"""Tu es un analyste de credit pour le marche UEMOA (Afrique de l'Ouest). Analyse CE profil precis.
 
 Profil:
 {qa}
 
 Revenu mensuel: {income} FCFA
 Montant demande: {wanted} FCFA
+Ratio demande/revenu: {ratio}%
+Secteur: {sector}
+Duree activite: {duration_months} mois
 Collateral: {"oui" if collateral else "non"}
+RC/Patente: {"oui" if business_reg else "non"}
+Historique credit: {credit_history}
+Epargne: {"oui" if has_savings else "non"}
+Montant realiste max: {realistic_max} FCFA
 Risque preliminaire: {risk_label}
 
+REGLES UEMOA:
+- Le marche informel represente ~80% de l'economie: absence de bulletin de salaire n'est pas un risque
+- Sans collateral: pret max = 6x revenu mensuel. Avec collateral: jusqu'a 24x
+- La mensualite ne doit pas exceder 40% du revenu mensuel
+- Taux directeurs: banques 8-18%, microfinances 10-24%, fintechs 24-60%
+
 INSTRUCTIONS STRICTES:
-1. Score base sur: remboursement possible (max 50% du revenu), secteur, collateral, historique
-2. analysis: cite les chiffres du profil (secteur, montant demande, revenu, collateral)
-3. missing_documents: liste les documents manquants types (piece identite, justificatif revenu, garantie)
-4. improvement_tips: SPECIFIQUES a ce profil, pas generiques
+1. Score 0-100 base sur: ratio remboursement, secteur, collateral, anciennete, historique credit, epargne
+2. Un ratio demande/revenu > 50% penalise fortement le score
+3. Un historique credit "bon" augmente le score
+4. L'epargne est un signal positif
+5. analysis: SPECIFIQUE au profil (secteur, montant, revenu, anciennete). Cite les chiffres exacts.
+6. missing_documents: adaptes au profil (pas de bulletins si informel)
+7. improvement_tips: 2-3 conseils SPECIFIQUES actionnables
 
 Retourne CE JSON:
 {{
-  "score": 420,
-  "risk": "Eleve",
-  "analysis": "2-3 phrases SPECIFIQUES. Cite secteur, montant, revenu. Explique le verdict.",
-  "missing_documents": ["piece_identite"],
-  "improvement_tips": ["Conseil SPECIFIQUE"],
+  "score": 65,
+  "risk": "Moyen",
+  "analysis": "Texte specifique de 2-3 phrases qui cite les chiffres du profil.",
+  "missing_documents": ["piece_identite", "preuve_revenus"],
+  "improvement_tips": ["Conseil 1 specifique", "Conseil 2 specifique"],
   "confidence": 0.85
-}}"""
+}}
+
+IMPORTANT: score entre 0 et 100. Sois REALISTE: un petit commerçant avec 150K revenu et 500K demande sans garantie = score bas (~30-45). Un profil stable avec garantie = 60-80."""
 
 
 
@@ -608,6 +686,93 @@ def _extract_business_registration(answers: list[dict]) -> bool:
     return False
 
 
+# ==============================================================
+# COUCHE 2 — Matching intelligent LLM
+# ==============================================================
+
+def _layer2_enrich(answers: list[dict], report: dict,
+                   partners: list[dict], products: list[dict]) -> dict:
+    """Enrichit le rapport avec une analyse LLM : meilleur match,
+    mensualites estimees, comparatif personnalise."""
+    top = report.get("top_recommendations", [])[:3]
+    if not top:
+        return {"recommendations": [], "summary": report.get("analysis", "")}
+
+    profil = report["profil"]
+    income = profil["monthly_income"]
+    wanted = profil["amount_wanted"]
+    sector = profil["sector"]
+
+    partners_ctx = "\n".join(
+        f"- {p['name']} ({p['type']}): {p['min_amount']:,}-{p['max_amount']:,} FCFA, taux {p['rate']}"
+        for p in top
+    )
+
+    products_ctx = "\n".join(
+        f"- {pr['partner']} > {pr['product']}: max {pr['max_amount']:,} FCFA, {pr['min_duration']}-{pr['max_duration']}mois, taux {pr['annual_rate']}%"
+        for pr in products[:10]
+    ) if products else ""
+
+    user_profile = "\n".join(f"- {a.get('q','')}: {a.get('a','')}" for a in answers)
+
+    prompt = f"""Tu es un conseiller credit UEMOA. Voici le profil et les partenaires disponibles.
+
+PROFIL:
+{user_profile}
+
+Revenu: {income:,} FCFA/mois
+Montant souhaite: {wanted:,} FCFA
+Secteur: {sector}
+
+PARTENAIRES ELIGIBLES:
+{partners_ctx}
+
+PRODUITS:
+{products_ctx}
+
+Pour chaque partenaire, estime:
+1. La mensualite sur 12 mois (taux suppose = moyenne du partenaire)
+2. Le taux approximatif selon le profil
+3. Pourquoi ce partenaire est adapte (ou pas) à CE profil precis
+
+Retourne CE JSON:
+{{
+  "summary": "Paragraphe comparatif de 3-4 phrases. Compare les options. Recommande la meilleure.",
+  "best_match": "Nom du meilleur partenaire",
+  "best_reason": "Pourquoi c'est le meilleur choix pour ce profil precis (2-3 phrases)",
+  "recommendations": [
+    {{
+      "name": "Nom partenaire",
+      "estimated_rate": 12.0,
+      "estimated_monthly": 45000,
+      "estimated_total": 540000,
+      "why": "Pourquoi ce partenaire pour ce profil (1-2 phrases)"
+    }}
+  ]
+}}
+
+Francais. Sois SPECIFIQUE au profil (cite les chiffres du client)."""
+    resp = client.chat.completions.create(
+        model=SCORE_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.2,
+        max_tokens=1024,
+    )
+    data = json.loads(resp.choices[0].message.content)
+
+    for rec in data.get("recommendations", []):
+        rname = rec.get("name", "")
+        for p in top:
+            if p["name"] == rname:
+                rec["match_percent"] = p.get("match_percent")
+                rec["type"] = p.get("type")
+                rec["products"] = p.get("products", [])
+                break
+
+    return data
+
+
 def build_comparison_report(answers: list[dict]) -> dict:
     country = _extract_country(answers)
     partners, products = _get_all_partners(country)
@@ -722,7 +887,7 @@ def build_comparison_report(answers: list[dict]) -> dict:
     # Top recommendations = eligible triés par match_score
     top = sorted([c for c in all_comparisons if c["status"] == "eligible"], key=lambda x: x["match_percent"], reverse=True)[:5]
 
-    return {
+    report = {
         "total_institutions": len(partners),
         "eligible_count": eligible_count,
         "partial_count": partial_count,
@@ -744,3 +909,12 @@ def build_comparison_report(answers: list[dict]) -> dict:
         "top_recommendations": top,
         "all_comparisons": all_comparisons,
     }
+
+    try:
+        enriched = _layer2_enrich(answers, report, partners, products)
+        report["layer2"] = enriched
+    except Exception as e:
+        _log(f"layer2 enrich failed: {e}")
+        report["layer2"] = {"recommendations": top, "summary": analysis}
+
+    return report

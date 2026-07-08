@@ -33,19 +33,14 @@
                 <label class="block text-sm font-medium mb-1">Numéro Mobile Money</label>
                 <input type="tel" id="phone" class="w-full border rounded-lg p-3" placeholder="Ex: 90 00 00 00">
             </div>
-            <button onclick="pay()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700">
-                Payer et commencer
+            <button onclick="startSession()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700">
+                Commencer
             </button>
         </div>
 
         <div id="step-chat" class="hidden">
             <div class="bg-white rounded-xl p-8 shadow-sm mb-4">
-                <div id="messages" class="space-y-4 mb-6 max-h-96 overflow-y-auto">
-                    <div class="bg-indigo-50 p-4 rounded-lg">
-                        <p class="font-medium">Credo IA</p>
-                        <p class="text-gray-700 mt-1">Bienvenue ! Je vais t'aider à vérifier ta solvabilité. Quelle est ton activité principale ?</p>
-                    </div>
-                </div>
+                <div id="messages" class="space-y-4 mb-6 max-h-96 overflow-y-auto"></div>
                 <div class="flex gap-2">
                     <input type="text" id="chat-input" class="flex-1 border rounded-lg p-3" placeholder="Réponds ici...">
                     <button onclick="sendMessage()" class="bg-indigo-600 text-white px-6 rounded-lg hover:bg-indigo-700">Envoyer</button>
@@ -69,6 +64,7 @@
     </div>
 
     <script>
+        let sessionId = '{{ session_id }}';
         let questions = [
             "Quelle est ton activité principale ?",
             "Depuis combien de temps exerces-tu ?",
@@ -82,19 +78,33 @@
         let qIdx = 0;
         let answers = [];
 
-        function pay() {
+        function startSession() {
             const plan = document.querySelector('input[name="plan"]:checked').value;
             const phone = document.getElementById('phone').value;
             if (!phone) { alert('Numéro requis'); return; }
 
-            document.getElementById('step-payment').classList.add('hidden');
-            document.getElementById('step-chat').classList.remove('hidden');
-
-            fetch('/api/pay', {
+            fetch('/api/session/start', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({phone, amount: parseInt(plan)})
-            });
+                body: JSON.stringify({phone, plan})
+            }).then(r => r.json()).then(data => {
+                sessionId = data.session_id;
+                history.replaceState(null, '', '/chat/' + sessionId);
+                document.getElementById('step-payment').classList.add('hidden');
+                document.getElementById('step-chat').classList.remove('hidden');
+                showNextQuestion();
+            }).catch(() => alert('Erreur de connexion. Réessaie.'));
+        }
+
+        function showNextQuestion() {
+            const msgDiv = document.getElementById('messages');
+            msgDiv.innerHTML += `
+                <div class="bg-indigo-50 p-4 rounded-lg">
+                    <p class="font-medium">Credo IA</p>
+                    <p class="text-gray-700 mt-1">${questions[qIdx]}</p>
+                </div>`;
+            qIdx++;
+            msgDiv.scrollTop = msgDiv.scrollHeight;
         }
 
         function sendMessage() {
@@ -104,56 +114,108 @@
 
             const msgDiv = document.getElementById('messages');
             msgDiv.innerHTML += `<div class="bg-gray-100 p-4 rounded-lg"><p class="font-medium">Toi</p><p class="text-gray-700 mt-1">${text}</p></div>`;
-            answers.push({q: questions[qIdx-1] || 'question', a: text});
+            answers.push(text);
             input.value = '';
 
             if (qIdx < questions.length) {
-                setTimeout(() => {
-                    msgDiv.innerHTML += `<div class="bg-indigo-50 p-4 rounded-lg"><p class="font-medium">Credo IA</p><p class="text-gray-700 mt-1">${questions[qIdx]}</p></div>`;
-                    qIdx++;
-                    msgDiv.scrollTop = msgDiv.scrollHeight;
-                }, 500);
+                setTimeout(() => showNextQuestion(), 500);
             } else {
-                setTimeout(() => analyze(), 500);
+                setTimeout(() => submitAnswers(), 500);
             }
         }
 
-        function analyze() {
-            fetch('/api/analyze', {
+        function submitAnswers() {
+            fetch('/api/chat/' + sessionId + '/questionnaire-answers', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({answers})
+                body: JSON.stringify({answers, questions})
+            }).then(r => r.json()).then(() => analyze()).catch(() => alert('Erreur. Réessaie.'));
+        }
+
+        function analyze() {
+            fetch('/api/chat/' + sessionId + '/analyze', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
             }).then(r => r.json()).then(data => {
                 document.getElementById('step-chat').classList.add('hidden');
                 const result = document.getElementById('result-content');
+
+                const l2 = data.layer2 || {};
+                const l2recs = (l2.recommendations || []).slice(0, 3);
+                const l2summary = l2.summary || '';
+                const bestMatch = l2.best_match || '';
+                const bestReason = l2.best_reason || '';
+                const profil = data.profil || {};
+
                 result.innerHTML = `
                     <div class="text-center mb-6">
                         <div class="text-5xl font-bold text-indigo-600 mb-2">${data.score}/100</div>
-                        <p class="text-lg font-semibold">Risque ${data.risk}</p>
+                        <p class="text-lg font-semibold" style="color: ${data.risk === 'Faible' ? 'green' : data.risk === 'Moyen' ? 'orange' : 'red'}">Risque ${data.risk}</p>
                     </div>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <p class="text-gray-600">Revenu</p>
+                            <p class="text-xl font-bold">${(profil.monthly_income || 0).toLocaleString()} FCFA</p>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <p class="text-gray-600">Montant estimé</p>
+                            <p class="text-xl font-bold">${(data.max_amount || 0).toLocaleString()} FCFA</p>
+                        </div>
+                    </div>
+                    ${bestMatch ? `
+                    <div class="bg-indigo-50 p-4 rounded-lg mb-4 border border-indigo-200">
+                        <p class="font-bold text-indigo-700">Meilleur choix : ${bestMatch}</p>
+                        <p class="text-gray-700 mt-1">${bestReason}</p>
+                    </div>` : ''}
                     <div class="border-t pt-4 mb-4">
-                        <p class="text-gray-600">Montant maximum estimé:</p>
-                        <p class="text-2xl font-bold">${data.max_amount.toLocaleString()} FCFA</p>
+                        <p class="font-semibold mb-2">Institutions partenaires</p>
+                        ${l2recs.length > 0 ? l2recs.map(p => `
+                        <div class="border rounded-lg p-3 mb-2">
+                            <p class="font-medium">${p.name}</p>
+                            <div class="grid grid-cols-2 gap-2 text-sm text-gray-600 mt-1">
+                                <span>Taux estimé: ${p.estimated_rate ? p.estimated_rate + '%' : ''}</span>
+                                <span>Mensualité: ${p.estimated_monthly ? p.estimated_monthly.toLocaleString() + ' FCFA' : ''}</span>
+                            </div>
+                            <p class="text-gray-600 text-sm mt-1">${p.why || ''}</p>
+                        </div>
+                        `).join('') : (data.partners || []).map(p => `
+                        <div class="border rounded-lg p-3 mb-2">
+                            <p class="font-medium">${p.name}</p>
+                            <p class="text-gray-600 text-sm">Score: ${p.match_percent || ''}%</p>
+                            <div class="text-gray-600 text-sm mt-1">
+                                ${(p.strengths || []).map(s => '<span class="text-green-600">+ ' + s + '</span><br>').join('')}
+                                ${(p.issues || []).map(s => '<span class="text-red-600">- ' + s + '</span><br>').join('')}
+                            </div>
+                        </div>`).join('')}
                     </div>
+                    ${l2summary ? `
+                    <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                        <p class="text-gray-700 italic">${l2summary}</p>
+                    </div>` : ''}
+                    ${data.analysis ? `
                     <div class="border-t pt-4 mb-4">
-                        <p class="font-semibold mb-2">Institutions partenaires recommandées:</p>
-                        ${data.partners.map(p => `<div class="border rounded-lg p-3 mb-2"><p class="font-medium">${p.name}</p><p class="text-gray-600">Jusqu'à ${p.amount.toLocaleString()} FCFA à ${p.rate}</p></div>`).join('')}
-                    </div>
-                    <div class="border-t pt-4">
-                        <p class="text-gray-600 italic">${data.advice}</p>
-                    </div>
+                        <p class="font-semibold mb-2">Analyse</p>
+                        <p class="text-gray-700">${data.analysis}</p>
+                    </div>` : ''}
+                    ${(data.tips || []).length > 0 ? `
+                    <div class="border-t pt-4 mb-4">
+                        <p class="font-semibold mb-2">Conseils pour améliorer ton dossier</p>
+                        <ul class="list-disc pl-5 text-gray-700">
+                            ${data.tips.map(t => '<li>' + t + '</li>').join('')}
+                        </ul>
+                    </div>` : ''}
                     <button onclick="window.print()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 mt-4">Télécharger le rapport</button>
                 `;
                 document.getElementById('step-result').classList.remove('hidden');
-            });
+            }).catch(() => alert('Erreur lors de l\'analyse. Réessaie.'));
         }
 
-        // Initialiser premier message
-        setTimeout(() => {
-            document.getElementById('messages').innerHTML +=
-                `<div class="bg-indigo-50 p-4 rounded-lg"><p class="font-medium">Credo IA</p><p class="text-gray-700 mt-1">${questions[0]}</p></div>`;
-            qIdx++;
-        }, 1000);
+        // Si session_id existante, démarre direct
+        if (sessionId) {
+            document.getElementById('step-payment').classList.add('hidden');
+            document.getElementById('step-chat').classList.remove('hidden');
+            setTimeout(() => showNextQuestion(), 500);
+        }
     </script>
 </body>
 </html>

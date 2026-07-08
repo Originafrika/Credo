@@ -215,6 +215,9 @@ def analyze(session_id):
             "tips": report.get("improvement_tips", []),
             "code": code,
             "plan": plan,
+            "max_amount": report.get("max_amount", 0),
+            "profil": report.get("profil", {}),
+            "layer2": report.get("layer2", {}),
         })
     except Exception as e:
         print(f"[CREDO] analyze error: {e}", flush=True)
