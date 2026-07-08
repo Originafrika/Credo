@@ -325,35 +325,37 @@ def upload_document(session_id):
 @app.route("/api/debug/report/<session_id>")
 def debug_report(session_id):
     try:
-        from credo_ai import _get_all_partners
+        from credo_ai import build_comparison_report
         conn = get_db()
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
         db_close(conn)
         if not msgs:
             return jsonify({"error": "no messages"})
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-        # Test _get_all_partners directly
+        # Try _get_all_partners via the import that build_comparison_report uses internally
         import os, psycopg2
         dsn = os.environ.get("NEON_DSN", "")
         try:
             conn2 = psycopg2.connect(dsn)
             cur = conn2.cursor()
-            cur.execute("SELECT name FROM partners WHERE 'TG' = ANY(countries) LIMIT 5")
-            direct = [r[0] for r in cur.fetchall()]
+            cur.execute("SELECT name, countries, min_amount, max_amount, sectors FROM partners WHERE 'TG' = ANY(countries) ORDER BY name")
+            direct = []
+            for r in cur.fetchall():
+                direct.append({"name": r[0], "countries": r[1], "min_amount": r[2], "max_amount": r[3], "sectors": r[4]})
             conn2.close()
-            direct_count = len(direct)
         except Exception as e2:
             direct = [f"DB error: {e2}"]
-            direct_count = -1
-        p, pr = _get_all_partners("TG")
+        report = build_comparison_report(answers)
         return jsonify({
-            "direct_tg_count": direct_count,
             "direct_tg": direct,
-            "get_all_partners_count": len(p),
-            "get_all_products_count": len(pr),
+            "report_top": report.get("top_recommendations", []),
+            "report_eligible": report.get("eligible_count", 0),
+            "report_partial": report.get("partial_count", 0),
+            "report_not_eligible": report.get("not_eligible_count", 0),
+            "report_score": report.get("score"),
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:500]}), 500
+        return jsonify({"ok": False, "error": str(e)[:500], "type": type(e).__name__}), 500
 
 @app.route("/verify/<code>")
 def verify_code(code):
