@@ -505,6 +505,7 @@ function renderResult(data) {
   var bestMatch = l2.best_match || '';
   var bestReason = l2.best_reason || '';
   var riskColor = data.risk === 'Faible' ? 'var(--success)' : data.risk === 'Moyen' ? 'var(--warn)' : 'var(--danger)';
+  var isSimple = data.plan === '2500';
 
   var html = '';
   html += '<div style="text-align:center;margin-bottom:1.5rem">';
@@ -512,15 +513,23 @@ function renderResult(data) {
   html += '<p style="font-weight:600;color:' + riskColor + '">Risque ' + (data.risk || 'N/A') + '</p>';
   html += '</div>';
 
-  if (bestMatch) {
+  if (bestMatch && !isSimple) {
     html += '<div class="best-match" style="margin-bottom:1.5rem"><h4>Meilleur choix : ' + escHtml(bestMatch) + '</h4><p>' + escHtml(bestReason) + '</p></div>';
   }
 
-  html += '<div class="bordered" style="text-align:center;padding:1.5rem 1rem;border-color:var(--amber-light);background:var(--amber-bg);border-radius:12px">';
-  html += '<p style="font-family:var(--font-display);font-weight:600;font-size:1.1rem;margin-bottom:0.5rem">Ton rapport complet est pret</p>';
-  html += '<p class="text-gray text-sm" style="margin-bottom:1rem">Comparaison detaillee avec toutes les institutions, analyse personnalisee, plan d action.</p>';
-  html += '<a href="/report/' + sessionId + '" class="btn btn-primary" style="display:inline-block;width:auto;padding:0.85rem 2.5rem">Voir le rapport complet</a>';
-  html += '</div>';
+  if (isSimple) {
+    html += '<div class="bordered" style="text-align:center;padding:1.5rem 1rem;border-color:var(--amber-light);background:var(--amber-bg);border-radius:12px">';
+    html += '<p style="font-family:var(--font-display);font-weight:600;font-size:1.1rem;margin-bottom:0.5rem">Rapport Simple</p>';
+    html += '<p class="text-gray text-sm" style="margin-bottom:1rem">Passe au Rapport Complet (5,000 FCFA) pour la comparaison complete et le code de recommandation partenaire.</p>';
+    html += '<a href="/report/' + sessionId + '" class="btn btn-outline" style="display:inline-block;width:auto;padding:0.85rem 2.5rem">Voir mon rapport</a>';
+    html += '</div>';
+  } else {
+    html += '<div class="bordered" style="text-align:center;padding:1.5rem 1rem;border-color:var(--amber-light);background:var(--amber-bg);border-radius:12px">';
+    html += '<p style="font-family:var(--font-display);font-weight:600;font-size:1.1rem;margin-bottom:0.5rem">Ton rapport complet est pret</p>';
+    html += '<p class="text-gray text-sm" style="margin-bottom:1rem">Comparaison detaillee avec toutes les institutions, analyse personnalisee, plan d action.</p>';
+    html += '<a href="/report/' + sessionId + '" class="btn btn-primary" style="display:inline-block;width:auto;padding:0.85rem 2.5rem">Voir le rapport complet</a>';
+    html += '</div>';
+  }
 
   document.getElementById('result-content').innerHTML = html;
 }

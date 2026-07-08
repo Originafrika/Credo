@@ -586,11 +586,11 @@ def extract_document_fields(image_url: str, doc_type: str) -> dict:
 # COUCHE 1 — Comparateur exhaustif multi-institutions
 # ==============================================================
 
-def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict]]:
-    """Retourne TOUS les partenaires actifs (sans LIMIT) et leurs produits."""
+def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict], list[dict]]:
+    """Retourne TOUS les partenaires actifs (sans LIMIT), leurs produits ET les regles."""
     dsn = os.environ.get("NEON_DSN", "") or NEON_DSN
     if not dsn:
-        return [], []
+        return [], [], []
     try:
         conn = psycopg2.connect(dsn)
         cur = conn.cursor()
@@ -633,11 +633,17 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict]]:
                     "min_duration": r[4], "max_duration": r[5], "annual_rate": _to_num(r[6]),
                     "collateral_required": r[7], "requirements": r[8], "description": r[9],
                 })
+
+        cur.execute(
+            """SELECT category, title, content FROM knowledge_base ORDER BY category LIMIT 20"""
+        )
+        rules = [{"category": r[0], "title": r[1], "content": r[2]} for r in cur.fetchall()]
+
         conn.close()
-        return partners, products
+        return partners, products, rules
     except Exception as e:
         _log(f"_get_all_partners failed: {e}")
-        return [], []
+        return [], [], []
 
 
 def _extract_sector(answers: list[dict]) -> str:
@@ -787,7 +793,7 @@ Francais. Sois SPECIFIQUE au profil (cite les chiffres du client)."""
 
 def build_comparison_report(answers: list[dict]) -> dict:
     country = _extract_country(answers)
-    partners, products = _get_all_partners(country)
+    partners, products, _ = _get_all_partners(country)
     monthly_income = _estimate_monthly_revenue(answers)
     amount_wanted = _extract_amount_wanted("", answers)
     sector = _extract_sector(answers)

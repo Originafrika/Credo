@@ -252,6 +252,14 @@ tbody tr:hover { background: var(--cream); }
   </div>
   {% endif %}
 
+  {% if is_simple %}
+  <div class="card" style="text-align:center;padding:3rem 2rem;border:2px dashed var(--amber-light)">
+    <p style="font-family:var(--font-display);font-weight:700;font-size:1.25rem;margin-bottom:0.75rem">Rapport Simple</p>
+    <p style="font-size:0.9rem;color:var(--gray-mid);margin-bottom:1.5rem">Passe au Rapport Complet (5,000 FCFA) pour la comparaison complete avec toutes les institutions, l'analyse detaillee, les conseils personnalises et un code de recommandation partenaire.</p>
+    <a href="/chat/new" class="btn-print" style="background:var(--amber);color:white;border:none;border-radius:10px;padding:0.85rem 2.5rem;font-family:var(--font-display);font-weight:600;font-size:1rem;cursor:pointer;display:inline-block;text-decoration:none">Obtenir le Rapport Complet</a>
+  </div>
+  {% endif %}
+
   <div class="page-break"></div>
 
   <!-- PAGE 3 — Meilleures options -->
@@ -314,6 +322,7 @@ tbody tr:hover { background: var(--cream); }
   </div>
   {% endif %}
 
+  {% if not is_simple %}
   <div class="page-break"></div>
 
   <!-- PAGE 4 — Comparaison complète -->
@@ -380,6 +389,7 @@ tbody tr:hover { background: var(--cream); }
       </table>
     </div>
   </div>
+  {% endif %}
 
   <div class="page-break"></div>
 

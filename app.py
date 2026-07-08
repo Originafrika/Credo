@@ -307,23 +307,27 @@ def analyze(session_id):
             code = generate_code()
         db_execute(conn,
             "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis",
-            (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", [])), json.dumps(report.get("missing_documents", [])), json.dumps(report.get("improvement_tips", [])), code, report.get("analysis", ""))
+            (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", []) if plan == "5000" else report.get("top_recommendations", [])[:1]), json.dumps(report.get("missing_documents", []) if plan == "5000" else []), json.dumps(report.get("improvement_tips", []) if plan == "5000" else []), code, report.get("analysis", "") if plan == "5000" else "")
         )
         db_execute(conn, "UPDATE sessions SET status = 'completed', code = %s, completed_at = NOW() WHERE id = %s", (code, session_id))
         db_close(conn)
-        return jsonify({
+        resp = {
             "score": report["score"],
             "risk": report.get("risk", "N/A"),
-            "analysis": report.get("analysis", ""),
-            "partners": report.get("top_recommendations", []),
-            "missing_documents": report.get("missing_documents", []),
-            "tips": report.get("improvement_tips", []),
-            "code": code,
             "plan": plan,
             "max_amount": report.get("max_amount", 0),
-            "profil": report.get("profil", {}),
-            "layer2": report.get("layer2", {}),
-        })
+        }
+        if plan == "5000":
+            resp.update({
+                "analysis": report.get("analysis", ""),
+                "partners": report.get("top_recommendations", []),
+                "missing_documents": report.get("missing_documents", []),
+                "tips": report.get("improvement_tips", []),
+                "code": code,
+                "profil": report.get("profil", {}),
+                "layer2": report.get("layer2", {}),
+            })
+        return jsonify(resp)
     except Exception as e:
         print(f"[CREDO] analyze error: {e}", flush=True)
         return jsonify({"error": f"Erreur: {str(e)[:300]}"}), 500
@@ -341,16 +345,18 @@ def get_result(session_id):
         db_close(conn)
         if not result:
             return jsonify({"error": "Analyse non trouvee"}), 404
+        plan = s["plan"] if s else "2500"
+        is_simple = plan == "2500"
         return jsonify({
             "score": result["score"],
             "risk": result["risk"],
             "max_amount": result["max_amount"],
-            "partners": json.loads(result["partners"]),
-            "missing_documents": json.loads(result["missing_docs"]),
-            "tips": json.loads(result["tips"]),
+            "partners": json.loads(result["partners"]) if not is_simple else [],
+            "missing_documents": json.loads(result["missing_docs"]) if not is_simple else [],
+            "tips": json.loads(result["tips"]) if not is_simple else [],
             "code": result["code"],
-            "analysis": result["analysis"],
-            "plan": s["plan"] if s else "2500",
+            "analysis": result["analysis"] if not is_simple else "",
+            "plan": plan,
         })
     except Exception as e:
         db_close(conn)
@@ -394,6 +400,7 @@ def view_report(session_id):
         if not s:
             db_close(conn)
             return render_template("error.html", message="Session invalide")
+        plan = s.get("plan", "2500")
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
         db_close(conn)
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
@@ -402,6 +409,7 @@ def view_report(session_id):
         except Exception as e:
             return render_template("error.html", message=f"Erreur rapport: {e}")
         l2 = report.get("layer2", {})
+        is_simple = plan == "2500"
         return render_template("report.html",
             total=report.get("total_institutions", 0),
             eligible=report.get("eligible_count", 0),
@@ -416,15 +424,16 @@ def view_report(session_id):
             amount_wanted=report.get("profil", {}).get("amount_wanted", 0),
             collateral="Oui" if report.get("profil", {}).get("collateral") else "Non",
             business_reg="Oui" if report.get("profil", {}).get("business_registration") else "Non",
-            recommendations=report.get("top_recommendations", []),
-            all_comparisons=report.get("all_comparisons", []),
-            analysis=report.get("analysis", ""),
-            missing_documents=report.get("missing_documents", []),
-            improvement_tips=report.get("improvement_tips", []),
-            layer2_summary=l2.get("summary", ""),
-            layer2_best_match=l2.get("best_match", ""),
-            layer2_best_reason=l2.get("best_reason", ""),
-            layer2_recs=l2.get("recommendations", [])[:3],
+            recommendations=report.get("top_recommendations", []) if not is_simple else report.get("top_recommendations", [])[:1],
+            all_comparisons=report.get("all_comparisons", []) if not is_simple else [],
+            analysis=report.get("analysis", "") if not is_simple else "Rapport Simple — passe au Rapport Complet (5,000 FCFA) pour l'analyse detaillee et la comparaison complete.",
+            missing_documents=report.get("missing_documents", []) if not is_simple else [],
+            improvement_tips=report.get("improvement_tips", []) if not is_simple else [],
+            layer2_summary=l2.get("summary", "") if not is_simple else "",
+            layer2_best_match=l2.get("best_match", "") if not is_simple else "",
+            layer2_best_reason=l2.get("best_reason", "") if not is_simple else "",
+            layer2_recs=l2.get("recommendations", [])[:3] if not is_simple else [],
+            is_simple=is_simple,
         )
     except Exception as e:
         db_close(conn)
