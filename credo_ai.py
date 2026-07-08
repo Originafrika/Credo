@@ -193,7 +193,7 @@ def _extract_savings(answers: list[dict]) -> bool:
     return False
 
 
-def score_from_answers(answers: list[dict]) -> dict:
+def score_from_answers(answers: list[dict], document_extractions: list[dict] = None) -> dict:
     description = ""
     for a in answers:
         if "decris" in (a.get("q") or "").lower()[:8]:
@@ -234,7 +234,8 @@ def score_from_answers(answers: list[dict]) -> dict:
 
     prompt = _build_groq_prompt(answers, monthly_income, amount_wanted, has_collateral,
                                 realistic_max, risk, sector, duration_months,
-                                credit_history, has_savings, business_reg)
+                                credit_history, has_savings, business_reg,
+                                document_extractions=document_extractions)
     resp = client.chat.completions.create(
         model=SCORE_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -254,11 +255,22 @@ def score_from_answers(answers: list[dict]) -> dict:
 def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool,
                        realistic_max: int, risk_label: str, sector: str,
                        duration_months: int, credit_history: str,
-                       has_savings: bool, business_reg: bool) -> str:
+                       has_savings: bool, business_reg: bool,
+                       document_extractions: list[dict] = None) -> str:
     compacted = _compact_history(answers)
     qa = "\n".join(f"- {a.get('q', '')}: {a.get('a', '')}" for a in compacted)
 
     ratio = round((wanted / income) * 100) if income > 0 else 0
+
+    docs_ctx = ""
+    if document_extractions:
+        doc_lines = []
+        for d in document_extractions:
+            relevant = {k: v for k, v in d.items() if k != "error" and not k.startswith("_")}
+            if relevant:
+                doc_lines.append(json.dumps(relevant, ensure_ascii=False))
+        if doc_lines:
+            docs_ctx = "\nDocuments fournis par le client:\n" + "\n".join(f"- {l}" for l in doc_lines) + "\n\n"
 
     return f"""Tu es un analyste de credit pour le marche UEMOA (Afrique de l'Ouest). Analyse CE profil precis.
 
@@ -276,8 +288,7 @@ Historique credit: {credit_history}
 Epargne: {"oui" if has_savings else "non"}
 Montant realiste max: {realistic_max} FCFA
 Risque preliminaire: {risk_label}
-
-REGLES UEMOA:
+{docs_ctx}REGLES UEMOA:
 - Le marche informel represente ~80% de l'economie: absence de bulletin de salaire n'est pas un risque
 - Sans collateral: pret max = 6x revenu mensuel. Avec collateral: jusqu'a 24x
 - La mensualite ne doit pas exceder 40% du revenu mensuel
@@ -845,7 +856,7 @@ Francais. Sois SPECIFIQUE au profil (cite les chiffres du client)."""
     return data
 
 
-def build_comparison_report(answers: list[dict]) -> dict:
+def build_comparison_report(answers: list[dict], document_extractions: list[dict] = None) -> dict:
     country = _extract_country(answers)
     partners, products, _ = _get_all_partners(country)
     monthly_income = _estimate_monthly_revenue(answers)
@@ -854,7 +865,7 @@ def build_comparison_report(answers: list[dict]) -> dict:
     collateral = _extract_has_collateral(answers)
     business_reg = _extract_business_registration(answers)
     realistic_max = _compute_realistic_max(monthly_income, collateral, amount_wanted)
-    score_data = score_from_answers(answers)
+    score_data = score_from_answers(answers, document_extractions)
     score = score_data.get("score", 0)
     risk = score_data.get("risk", "N/A")
     analysis = score_data.get("analysis", "")

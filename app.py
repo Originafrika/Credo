@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -317,7 +318,36 @@ def analyze(session_id):
             db_close(conn)
             return jsonify({"error": "Aucune reponse"}), 400
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-        report = build_comparison_report(answers)
+
+        docs = db_execute(conn, "SELECT id, doc_type, storage_url, extracted_json FROM documents WHERE session_id = %s", (session_id,))
+        document_extractions = []
+        for d in docs:
+            if d.get("extracted_json"):
+                try:
+                    document_extractions.append(json.loads(d["extracted_json"]))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                continue
+            fpath = os.path.join("uploads", d["storage_url"])
+            if os.path.isfile(fpath):
+                try:
+                    with open(fpath, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode("utf-8")
+                    ext = os.path.splitext(d["storage_url"])[1].lower()
+                    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp"}.get(ext.lstrip("."), "image/jpeg")
+                    data_url = f"data:{mime};base64,{b64}"
+                    extracted = extract_document_fields(data_url, d.get("doc_type", "unknown"))
+                    if extracted and "error" not in extracted:
+                        document_extractions.append(extracted)
+                        conn2 = get_db()
+                        db_execute(conn2, "UPDATE documents SET extracted_json = %s WHERE id = %s", (json.dumps(extracted), d["id"]))
+                        conn2.close()
+                except Exception as e:
+                    print(f"[CREDO] vision extract failed for {d['storage_url']}: {e}", flush=True)
+            else:
+                print(f"[CREDO] file not found for vision: {d['storage_url']}", flush=True)
+
+        report = build_comparison_report(answers, document_extractions)
         code = None
         plan = s["plan"]
         if plan == "5000":
@@ -393,10 +423,18 @@ def api_report(session_id):
             db_close(conn)
             return jsonify({"error": "Session invalide"}), 404
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+        docs = db_execute(conn, "SELECT doc_type, storage_url, extracted_json FROM documents WHERE session_id = %s", (session_id,))
         db_close(conn)
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        document_extractions = []
+        for d in docs:
+            if d.get("extracted_json"):
+                try:
+                    document_extractions.append(json.loads(d["extracted_json"]))
+                except (json.JSONDecodeError, TypeError):
+                    pass
         try:
-            report = build_comparison_report(answers)
+            report = build_comparison_report(answers, document_extractions)
         except Exception as e:
             return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
         return jsonify(report)
@@ -419,10 +457,18 @@ def view_report(session_id):
             return render_template("error.html", message="Session invalide")
         plan = s.get("plan", "2500")
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+        docs = db_execute(conn, "SELECT doc_type, storage_url, extracted_json FROM documents WHERE session_id = %s", (session_id,))
         db_close(conn)
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        document_extractions = []
+        for d in docs:
+            if d.get("extracted_json"):
+                try:
+                    document_extractions.append(json.loads(d["extracted_json"]))
+                except (json.JSONDecodeError, TypeError):
+                    pass
         try:
-            report = build_comparison_report(answers)
+            report = build_comparison_report(answers, document_extractions)
         except Exception as e:
             return render_template("error.html", message=f"Erreur rapport: {e}")
         l2 = report.get("layer2", {})
