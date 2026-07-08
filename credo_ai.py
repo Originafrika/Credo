@@ -592,7 +592,7 @@ def _extract_country(answers: list[dict]) -> str:
     }
     for code, keywords in mapping.items():
         if any(kw in text for kw in keywords):
-            return code
+            return code.upper()
     return "TG"
 
 
