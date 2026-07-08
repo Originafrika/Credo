@@ -1,188 +1,456 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rapport Credo — Comparatif complet</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rapport de solvabilité — Credo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --amber: oklch(0.68 0.18 75);
+  --amber-deep: oklch(0.55 0.2 75);
+  --amber-light: oklch(0.92 0.06 75);
+  --amber-bg: oklch(0.97 0.015 75);
+  --teal: oklch(0.55 0.12 195);
+  --teal-light: oklch(0.92 0.04 195);
+  --surface: oklch(0.99 0.003 75);
+  --cream: oklch(0.975 0.008 75);
+  --charcoal: oklch(0.15 0.01 60);
+  --gray-mid: oklch(0.5 0.01 60);
+  --gray-light: oklch(0.85 0.01 60);
+  --success: oklch(0.62 0.18 145);
+  --warn: oklch(0.7 0.15 85);
+  --danger: oklch(0.5 0.2 25);
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-body);
+  background: var(--cream);
+  color: var(--charcoal);
+  line-height: 1.6;
+}
+.container { max-width: 960px; margin: 0 auto; padding: 0 1.5rem; }
+
+/* Print */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+  .page-break { page-break-before: always; }
+  .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+}
+
+/* Nav */
+.nav {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--gray-light);
+  position: sticky; top: 0; z-index: 50;
+}
+.nav .inner {
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 960px; margin: 0 auto; padding: 0.875rem 1.5rem;
+}
+.nav-brand { display: flex; align-items: center; gap: 0.625rem; text-decoration: none; }
+.nav-icon {
+  width: 32px; height: 32px;
+  background: var(--amber); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-family: var(--font-display); font-weight: 700; font-size: 0.875rem;
+}
+.nav-title { font-family: var(--font-display); font-weight: 600; font-size: 1.125rem; color: var(--charcoal); }
+.nav-sub { font-size: 0.85rem; color: var(--gray-mid); }
+
+/* Cards */
+.card { background: var(--surface); border-radius: 16px; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-bottom: 1.5rem; }
+.section-title { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; margin-bottom: 1.5rem; }
+.section-title .sub { font-family: var(--font-body); font-size: 0.9rem; font-weight: 400; color: var(--gray-mid); display: block; margin-top: 0.2rem; }
+.text-sm { font-size: 0.9rem; }
+.text-gray { color: var(--gray-mid); }
+
+/* Cover */
+.cover {
+  text-align: center; padding: 4rem 2rem 3rem;
+}
+.cover-icon {
+  width: 64px; height: 64px; margin: 0 auto 1.5rem;
+  background: var(--amber); border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-family: var(--font-display); font-weight: 700; font-size: 1.75rem;
+}
+.cover h1 { font-family: var(--font-display); font-weight: 700; font-size: 2.5rem; margin-bottom: 0.5rem; }
+.cover p { color: var(--gray-mid); font-size: 1.05rem; max-width: 480px; margin: 0 auto 2rem; }
+.cover-score {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  background: var(--amber-bg); border: 1px solid var(--amber-light);
+  border-radius: 100px; padding: 0.5rem 1.5rem 0.5rem 0.5rem;
+}
+.cover-score .num {
+  background: var(--amber); color: white; border-radius: 100px;
+  padding: 0.25rem 1rem; font-family: var(--font-display); font-weight: 700; font-size: 1.5rem;
+}
+.cover-score .risk-label { font-size: 0.9rem; color: var(--gray-mid); }
+.cover-score .risk-value { font-family: var(--font-display); font-weight: 600; }
+
+/* Stats */
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+.stat-box { background: var(--cream); border-radius: 12px; padding: 1rem; text-align: center; }
+.stat-box .stat-label { font-size: 0.8rem; color: var(--gray-mid); }
+.stat-box .stat-value { font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; color: var(--charcoal); }
+
+/* Badges */
+.badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; }
+.badge-green { background: oklch(0.92 0.04 145); color: oklch(0.35 0.12 145); }
+.badge-yellow { background: oklch(0.92 0.06 85); color: oklch(0.4 0.15 85); }
+.badge-red { background: oklch(0.92 0.06 25); color: oklch(0.4 0.15 25); }
+
+/* Rec cards */
+.rec-card { border: 1px solid var(--gray-light); border-radius: 12px; padding: 1.25rem; margin-bottom: 0.75rem; }
+.rec-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.rec-name { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; }
+.rec-type { font-size: 0.85rem; color: var(--gray-mid); }
+.rec-match { background: var(--amber); color: white; padding: 0.2rem 0.75rem; border-radius: 9999px; font-weight: 700; }
+.rec-meta { font-size: 0.85rem; color: var(--gray-mid); margin-top: 0.5rem; }
+.rec-strengths { list-style: none; margin-top: 0.5rem; }
+.rec-strengths li { font-size: 0.85rem; color: var(--success); }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+thead th { text-align: left; padding: 0.65rem 0.75rem 0.65rem 0; font-weight: 600; border-bottom: 1px solid var(--gray-light); }
+tbody td { padding: 0.65rem 0.75rem 0.65rem 0; border-bottom: 1px solid var(--gray-light); vertical-align: top; }
+tbody tr:hover { background: var(--cream); }
+.detail-link { color: var(--amber-deep); text-decoration: underline; cursor: pointer; font-size: 0.85rem; }
+.detail-link:hover { color: var(--charcoal); }
+.details-panel { display: none; margin-top: 0.5rem; font-size: 0.85rem; }
+.details-panel.open { display: block; }
+
+.legend { display: flex; gap: 1rem; font-size: 0.85rem; margin-bottom: 1rem; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 0.35rem; }
+
+/* Institution detail cards in full section */
+.inst-card { border: 1px solid var(--gray-light); border-radius: 12px; padding: 1.25rem; margin-bottom: 0.75rem; display: none; }
+.inst-card.open { display: block; }
+
+.disclaimer { background: var(--cream); border-radius: 12px; padding: 1.5rem; font-size: 0.85rem; color: var(--gray-mid); line-height: 1.5; }
+
+/* Tip list */
+.tip-list { list-style: none; }
+.tip-list li {
+  background: var(--cream); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.5rem;
+  font-size: 0.9rem; border-left: 3px solid var(--amber);
+}
+.doc-list { list-style: none; }
+.doc-list li {
+  background: var(--cream); border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.35rem;
+  font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;
+}
+.doc-list li::before { content: "?"; color: var(--warn); }
+
+@media (max-width: 640px) {
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .card { padding: 1.25rem; }
+  table { font-size: 0.75rem; }
+  .cover h1 { font-size: 1.75rem; }
+}
+</style>
 </head>
-<body class="bg-gray-50 font-sans">
-    <nav class="bg-white shadow-sm sticky top-0 z-10">
-        <div class="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-            <span class="text-2xl font-bold text-indigo-600">Credo</span>
-            <span class="text-sm text-gray-500">Rapport comparatif</span>
-        </div>
-    </nav>
+<body>
 
-    <div class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+<nav class="nav no-print">
+  <div class="inner">
+    <a href="/" class="nav-brand">
+      <div class="nav-icon">C</div>
+      <span class="nav-title">Credo</span>
+    </a>
+    <span class="nav-sub">Rapport de solvabilité</span>
+  </div>
+</nav>
 
-        <!-- Header -->
-        <div class="bg-white rounded-xl p-8 shadow-sm">
-            <h1 class="text-3xl font-bold mb-2">Rapport de solvabilité</h1>
-            <p class="text-gray-600">Comparaison de ton profil contre <strong>{{ report.total_institutions }}</strong> institutions financières</p>
-            <div class="mt-4 flex gap-4 flex-wrap">
-                <div class="bg-green-50 text-green-700 px-4 py-2 rounded-lg font-semibold">
-                    {{ report.eligible_count }} éligible(s)
-                </div>
-                <div class="bg-yellow-50 text-yellow-700 px-4 py-2 rounded-lg font-semibold">
-                    {{ report.partial_count }} partiel(s)
-                </div>
-                <div class="bg-red-50 text-red-700 px-4 py-2 rounded-lg font-semibold">
-                    {{ report.not_eligible_count }} non éligible(s)
-                </div>
-            </div>
-        </div>
+<div class="container" style="padding-bottom:3rem">
 
-        <!-- Ton profil -->
-        <div class="bg-white rounded-xl p-8 shadow-sm">
-            <h2 class="text-xl font-bold mb-4">Ton profil</h2>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <p class="text-sm text-gray-500">Score estimé</p>
-                    <p class="text-2xl font-bold">{{ report.score }}/1000</p>
-                </div>
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <p class="text-sm text-gray-500">Revenu mensuel</p>
-                    <p class="text-2xl font-bold">{{ "{:,.0f}".format(report.profil.monthly_income) }} FCFA</p>
-                </div>
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <p class="text-sm text-gray-500">Montant souhaité</p>
-                    <p class="text-2xl font-bold">{{ "{:,.0f}".format(report.profil.amount_wanted) }} FCFA</p>
-                </div>
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <p class="text-sm text-gray-500">Secteur</p>
-                    <p class="font-semibold">{{ report.profil.sector }}</p>
-                </div>
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <p class="text-sm text-gray-500">Garantie</p>
-                    <p class="font-semibold">{% if report.profil.collateral %}Oui{% else %}Non{% endif %}</p>
-                </div>
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <p class="text-sm text-gray-500">RC/Patente</p>
-                    <p class="font-semibold">{% if report.profil.business_registration %}Oui{% else %}Non{% endif %}</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Top recommendations -->
-        {% if report.top_recommendations %}
-        <div class="bg-white rounded-xl p-8 shadow-sm">
-            <h2 class="text-xl font-bold mb-4">Meilleures options pour toi</h2>
-            <div class="grid gap-4">
-            {% for p in report.top_recommendations %}
-                <div class="border-l-4 border-green-500 bg-green-50 p-4 rounded-r-lg">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="font-bold text-lg">{{ p.name }}</h3>
-                            <p class="text-sm text-gray-600">{{ p.type }}</p>
-                        </div>
-                        <span class="bg-green-600 text-white px-3 py-1 rounded-full text-sm font-semibold">{{ p.match_percent }}%</span>
-                    </div>
-                    <div class="mt-2 text-sm text-gray-600">
-                        {% if p.min_amount and p.max_amount %}
-                        <span class="mr-4">{{ "{:,.0f}".format(p.min_amount) }} - {{ "{:,.0f}".format(p.max_amount) }} FCFA</span>
-                        {% endif %}
-                        {% if p.rate %}
-                        <span>Taux: {{ p.rate }}</span>
-                        {% endif %}
-                    </div>
-                    {% if p.strengths %}
-                    <ul class="mt-2 text-sm">
-                        {% for s in p.strengths %}
-                        <li class="text-green-600">✓ {{ s }}</li>
-                        {% endfor %}
-                    </ul>
-                    {% endif %}
-                </div>
-            {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Comparaison complète -->
-        <div class="bg-white rounded-xl p-8 shadow-sm">
-            <h2 class="text-xl font-bold mb-4">Comparaison complète — {{ report.total_institutions }} institutions</h2>
-
-            <!-- Légende -->
-            <div class="flex gap-4 mb-6 text-sm">
-                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span> Éligible</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span> Partiel</span>
-                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Non éligible</span>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="border-b text-left">
-                            <th class="py-3 pr-4 font-semibold">Institution</th>
-                            <th class="py-3 pr-4 font-semibold">Type</th>
-                            <th class="py-3 pr-4 font-semibold">Fourchette</th>
-                            <th class="py-3 pr-4 font-semibold">Taux</th>
-                            <th class="py-3 pr-4 font-semibold">Statut</th>
-                            <th class="py-3 font-semibold">Détails</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for p in report.all_comparisons %}
-                        <tr class="border-b hover:bg-gray-50">
-                            <td class="py-3 pr-4 font-medium">{{ p.name }}</td>
-                            <td class="py-3 pr-4 text-gray-600">{{ p.type }}</td>
-                            <td class="py-3 pr-4 text-gray-600">
-                                {% if p.min_amount and p.max_amount %}
-                                {{ "{:,.0f}".format(p.min_amount) }} - {{ "{:,.0f}".format(p.max_amount) }}
-                                {% else %}—{% endif %}
-                            </td>
-                            <td class="py-3 pr-4 text-gray-600">{{ p.rate or '—' }}</td>
-                            <td class="py-3 pr-4">
-                                {% if p.status == 'eligible' %}
-                                <span class="bg-green-100 text-green-700 px-2 py-1 rounded font-semibold text-xs">Éligible</span>
-                                {% elif p.status == 'partial' %}
-                                <span class="bg-yellow-100 text-yellow-700 px-2 py-1 rounded font-semibold text-xs">{{ p.match_percent }}%</span>
-                                {% else %}
-                                <span class="bg-red-100 text-red-700 px-2 py-1 rounded font-semibold text-xs">Non</span>
-                                {% endif %}
-                            </td>
-                            <td class="py-3">
-                                <button onclick="toggleDetails('{{ loop.index }}')" class="text-indigo-600 hover:underline text-xs">Détails</button>
-                                <div id="details-{{ loop.index }}" class="hidden mt-2 text-xs text-gray-600 space-y-1">
-                                    {% if p.strengths %}
-                                    <div class="text-green-600">
-                                        {% for s in p.strengths %}<div>✓ {{ s }}</div>{% endfor %}
-                                    </div>
-                                    {% endif %}
-                                    {% if p.issues %}
-                                    <div class="text-red-600">
-                                        {% for i in p.issues %}<div>✗ {{ i }}</div>{% endfor %}
-                                    </div>
-                                    {% endif %}
-                                    {% if p.products %}
-                                    <div class="mt-2 border-t pt-2">
-                                        <p class="font-semibold text-gray-700">Produits:</p>
-                                        {% for pr in p.products %}
-                                        <div class="ml-2">• {{ pr.name }} — {{ "{:,.0f}".format(pr.min_amount or 0) }}-{{ "{:,.0f}".format(pr.max_amount or 0) }} FCFA, {{ pr.rate }}%</div>
-                                        {% endfor %}
-                                    </div>
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Disclaimer -->
-        <div class="bg-gray-100 rounded-xl p-6 text-sm text-gray-500">
-            <p>Ce rapport est basé sur les informations que tu as fournies et notre base de données d'institutions financières. Les conditions exactes (taux, montant, durée) sont confirmées par l'institution lors de la demande formelle. Credo n'est pas un conseiller financier agréé.</p>
-        </div>
+  <!-- PAGE 1 — Cover -->
+  <div class="card cover">
+    <div class="cover-icon">C</div>
+    <h1>Rapport de solvabilité</h1>
+    <p>Analyse complète de ton profil financier comparé à <strong>{{ total }}</strong> institutions partenaires.</p>
+    {% set risk_color = "var(--success)" if risk == "Faible" else ("var(--warn)" if risk == "Moyen" else "var(--danger)") %}
+    <div class="cover-score">
+      <span class="num">{{ score }}</span>
+      <span>
+        <div class="risk-label">Score /100 — Risque</div>
+        <span class="risk-value" style="color:{{ risk_color }}">{{ risk }}</span>
+      </span>
     </div>
+    <div style="margin-top:1.5rem;display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center">
+      <span class="badge badge-green">{{ eligible }} éligible(s)</span>
+      <span class="badge badge-yellow">{{ partial }} partiel(s)</span>
+      <span class="badge badge-red">{{ not_eligible }} non éligible(s)</span>
+    </div>
+  </div>
 
-    <script>
-    function toggleDetails(id) {
-        const el = document.getElementById('details-' + id);
-        el.classList.toggle('hidden');
-    }
-    </script>
+  {% if layer2_best_match %}
+  <div class="card" style="text-align:center;border:1px solid var(--amber-light);background:var(--amber-bg)">
+    <p style="font-size:0.85rem;color:var(--gray-mid);margin-bottom:0.35rem">Meilleure recommandation</p>
+    <p style="font-family:var(--font-display);font-weight:700;font-size:1.25rem;color:var(--amber-deep)">{{ layer2_best_match }}</p>
+    {% if layer2_best_reason %}
+    <p style="font-size:0.85rem;color:var(--gray-mid);margin-top:0.25rem">{{ layer2_best_reason }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="page-break"></div>
+
+  <!-- PAGE 2 — Profil financier -->
+  <div class="card">
+    <h2 class="section-title">Ton profil financier</h2>
+    <div class="stat-grid">
+      <div class="stat-box">
+        <div class="stat-label">Score estimé</div>
+        <div class="stat-value" style="color:{{ risk_color }}">{{ score }}<span style="font-size:0.75rem;color:var(--gray-mid)">/100</span></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Revenu mensuel</div>
+        <div class="stat-value">{{ "{:,.0f}".format(monthly_income) }}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Montant souhaité</div>
+        <div class="stat-value">{{ "{:,.0f}".format(amount_wanted) }}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Capacité max estimée</div>
+        <div class="stat-value">{{ "{:,.0f}".format(realistic_max) }}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Secteur</div>
+        <div class="stat-value" style="font-size:1rem;font-weight:600;font-family:var(--font-body)">{{ sector }}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Garantie</div>
+        <div class="stat-value" style="font-size:1rem;font-weight:600;font-family:var(--font-body)">{{ collateral }}</div>
+      </div>
+    </div>
+    {% if business_reg == "Oui" %}
+    <div style="margin-top:0.75rem;font-size:0.85rem;color:var(--success)">+ RC/Patente disponible</div>
+    {% endif %}
+  </div>
+
+  {% if analysis %}
+  <!-- PAGE 2 (suite) — Analyse -->
+  <div class="card">
+    <h2 class="section-title">Analyse de ton dossier</h2>
+    <p style="font-size:0.95rem;line-height:1.7">{{ analysis }}</p>
+  </div>
+  {% endif %}
+
+  {% if layer2_summary %}
+  <div class="card" style="background:var(--amber-bg)">
+    <h2 class="section-title" style="margin-bottom:0.75rem">Synthèse</h2>
+    <p style="font-size:0.9rem;font-style:italic;color:var(--charcoal)">{{ layer2_summary }}</p>
+  </div>
+  {% endif %}
+
+  <div class="page-break"></div>
+
+  <!-- PAGE 3 — Meilleures options -->
+  {% if recommendations %}
+  <div class="card">
+    <h2 class="section-title">
+      Meilleures options pour toi
+      <span class="sub">Institutions où ton profil est éligible, triées par pertinence</span>
+    </h2>
+    {% for p in recommendations %}
+    <div class="rec-card" style="border-left:4px solid var(--success)">
+      <div class="rec-header">
+        <div>
+          <div class="rec-name">{{ p.name }}</div>
+          <div class="rec-type">{{ p.type }}</div>
+        </div>
+        {% if p.match_percent %}<span class="rec-match">{{ p.match_percent }}%</span>{% endif %}
+      </div>
+      <div class="rec-meta">
+        {% if p.min_amount and p.max_amount %}
+        <span style="margin-right:1.5rem">Fourchette : {{ "{:,.0f}".format(p.min_amount) }} — {{ "{:,.0f}".format(p.max_amount) }} FCFA</span>
+        {% endif %}
+        {% if p.rate %}<span>Taux indicatif : {{ p.rate }}</span>{% endif %}
+      </div>
+      {% if p.strengths %}
+      <ul class="rec-strengths">
+        {% for s in p.strengths %}<li>+ {{ s }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if layer2_recs %}
+  <div class="card">
+    <h2 class="section-title">
+      Recommandations personnalisées
+      <span class="sub">Analyse avancée de ton profil</span>
+    </h2>
+    {% for r in layer2_recs %}
+    <div class="rec-card" style="border-left:4px solid var(--amber)">
+      <div class="rec-header">
+        <div>
+          <div class="rec-name">{{ r.name }}</div>
+        </div>
+        {% if r.match_percent %}<span class="rec-match">{{ r.match_percent }}%</span>{% endif %}
+      </div>
+      {% if r.estimated_monthly %}
+      <div class="rec-meta">
+        Mensualité estimée : {{ "{:,.0f}".format(r.estimated_monthly) }} FCFA
+        {% if r.estimated_rate %} — Taux : {{ r.estimated_rate }}%{% endif %}
+      </div>
+      {% endif %}
+      {% if r.why %}
+      <p style="font-size:0.85rem;color:var(--gray-mid);margin-top:0.5rem">{{ r.why }}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="page-break"></div>
+
+  <!-- PAGE 4 — Comparaison complète -->
+  <div class="card">
+    <h2 class="section-title">
+      Comparaison complète — {{ total }} institutions
+      <span class="sub">Statut de ton profil face aux conditions de chaque partenaire</span>
+    </h2>
+    <div class="legend">
+      <span><span class="legend-dot" style="background:var(--success)"></span> Éligible</span>
+      <span><span class="legend-dot" style="background:var(--warn)"></span> Partiel</span>
+      <span><span class="legend-dot" style="background:var(--danger)"></span> Non éligible</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Institution</th>
+            <th>Type</th>
+            <th>Fourchette</th>
+            <th>Taux</th>
+            <th>Statut</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in all_comparisons %}
+          <tr>
+            <td style="font-weight:500">{{ p.name }}</td>
+            <td class="text-gray">{{ p.type }}</td>
+            <td class="text-gray">{% if p.min_amount and p.max_amount %}{{ "{:,.0f}".format(p.min_amount) }} — {{ "{:,.0f}".format(p.max_amount) }}{% else %}—{% endif %}</td>
+            <td class="text-gray">{{ p.rate or '—' }}</td>
+            <td>
+              {% if p.status == 'eligible' %}
+              <span class="badge badge-green">Éligible</span>
+              {% elif p.status == 'partial' %}
+              <span class="badge badge-yellow">{{ p.match_percent }}%</span>
+              {% else %}
+              <span class="badge badge-red">Non</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="detail-link" onclick="toggleDetails('{{ loop.index }}')">+</span>
+              <div class="details-panel" id="details-{{ loop.index }}">
+                {% if p.strengths %}
+                <div style="color:var(--success);margin-bottom:0.25rem">{% for s in p.strengths %}<div>+ {{ s }}</div>{% endfor %}</div>
+                {% endif %}
+                {% if p.issues %}
+                <div style="color:var(--danger);margin-bottom:0.25rem">{% for i in p.issues %}<div>− {{ i }}</div>{% endfor %}</div>
+                {% endif %}
+                {% if p.products %}
+                <div style="margin-top:0.25rem;border-top:1px solid var(--gray-light);padding-top:0.5rem">
+                  <p style="font-weight:600;font-size:0.8rem;margin-bottom:0.25rem">Produits disponibles :</p>
+                  {% for pr in p.products %}
+                  <div style="font-size:0.8rem">• {{ pr.name }} — {{ "{:,.0f}".format(pr.min_amount or 0) }}–{{ "{:,.0f}".format(pr.max_amount or 0) }} FCFA, {{ pr.rate }}%</div>
+                  {% endfor %}
+                </div>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- PAGE 5 — Plan d'action -->
+  {% if missing_documents or improvement_tips %}
+  <div class="card">
+    <h2 class="section-title">
+      Plan d'action
+      <span class="sub">Ce qu'il te faut pour concrétiser ton dossier</span>
+    </h2>
+
+    {% if missing_documents %}
+    <div style="margin-bottom:1.5rem">
+      <p style="font-weight:600;margin-bottom:0.75rem">Documents à préparer</p>
+      <ul class="doc-list">
+        {% for d in missing_documents %}
+        <li>{{ d }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if improvement_tips %}
+    <div>
+      <p style="font-weight:600;margin-bottom:0.75rem">Conseils pour améliorer ton dossier</p>
+      <ul class="tip-list">
+        {% for t in improvement_tips %}
+        <li>{{ t }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if layer2_recs or recommendations %}
+  <div class="card">
+    <h2 class="section-title">Prochaines étapes</h2>
+    <ol style="padding-left:1.25rem">
+      <li style="margin-bottom:0.75rem;font-size:0.95rem">
+        <strong>Choisis l'institution</strong> qui correspond le mieux à ton profil parmi les recommandations ci-dessus.
+      </li>
+      <li style="margin-bottom:0.75rem;font-size:0.95rem">
+        <strong>Prépare les documents</strong> listés dans la section Plan d'action.
+      </li>
+      <li style="margin-bottom:0.75rem;font-size:0.95rem">
+        <strong>Rends-toi en agence</strong> avec ton code de recommandation pour finaliser la demande.
+      </li>
+    </ol>
+  </div>
+  {% endif %}
+
+  <div class="page-break"></div>
+
+  <!-- Dernière page — Disclaimer -->
+  <div class="disclaimer" style="text-align:center;padding:3rem 2rem">
+    <p style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;margin-bottom:0.75rem">Credo</p>
+    <p style="margin-bottom:0.5rem">Ce rapport est basé sur les informations que tu as fournies et notre base de données d'institutions financières. Les conditions exactes (taux, montant, durée) sont confirmées par l'institution lors de la demande formelle.</p>
+    <p>Credo n'est pas un conseiller financier agréé. Les scores et recommmandations sont indicatifs.</p>
+  </div>
+
+  <div class="no-print" style="text-align:center;padding:1rem 0">
+    <button onclick="window.print()" class="btn-print" style="background:var(--amber);color:white;border:none;border-radius:10px;padding:0.85rem 2.5rem;font-family:var(--font-display);font-weight:600;font-size:1rem;cursor:pointer">Télécharger le rapport (PDF)</button>
+  </div>
+</div>
+
+<script>
+function toggleDetails(id) {
+  var el = document.getElementById('details-' + id);
+  el.classList.toggle('open');
+}
+</script>
 </body>
 </html>

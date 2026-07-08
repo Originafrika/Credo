@@ -1,221 +1,438 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Credo  -  Analyse</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Credo — Analyse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --amber: oklch(0.68 0.18 75);
+  --amber-deep: oklch(0.55 0.2 75);
+  --amber-light: oklch(0.92 0.06 75);
+  --amber-bg: oklch(0.97 0.015 75);
+  --teal: oklch(0.55 0.12 195);
+  --teal-light: oklch(0.92 0.04 195);
+  --surface: oklch(0.99 0.003 75);
+  --cream: oklch(0.975 0.008 75);
+  --charcoal: oklch(0.15 0.01 60);
+  --gray-mid: oklch(0.5 0.01 60);
+  --gray-light: oklch(0.85 0.01 60);
+  --success: oklch(0.62 0.18 145);
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-body);
+  background: var(--cream);
+  color: var(--charcoal);
+  line-height: 1.6;
+}
+.container { max-width: 640px; margin: 0 auto; padding: 0 1.5rem; }
+
+/* Nav */
+.nav {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--gray-light);
+  position: sticky; top: 0; z-index: 50;
+}
+.nav .container {
+  display: flex; align-items: center; padding: 0.875rem 1.5rem;
+}
+.nav-icon {
+  width: 32px; height: 32px;
+  background: var(--amber); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-family: var(--font-display); font-weight: 700; font-size: 0.875rem;
+}
+.nav-title {
+  font-family: var(--font-display); font-weight: 600; font-size: 1.125rem;
+  color: var(--charcoal); margin-left: 0.625rem;
+}
+
+/* Cards */
+.card {
+  background: var(--surface); border-radius: 16px; padding: 2rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; padding: 0.85rem 2rem;
+  font-family: var(--font-display); font-weight: 600; font-size: 1rem;
+  cursor: pointer; border: none; text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-primary { background: var(--amber); color: white; width: 100%; }
+.btn-primary:hover { background: var(--amber-deep); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-outline {
+  background: transparent; color: var(--charcoal);
+  border: 1.5px solid var(--gray-light); width: 100%;
+}
+.btn-outline:hover { border-color: var(--amber); }
+
+/* Form */
+label { display: block; }
+.radio-card {
+  display: flex; align-items: center; justify-content: space-between;
+  border: 1.5px solid var(--gray-light); border-radius: 12px;
+  padding: 1rem 1.25rem; cursor: pointer; transition: border-color 0.2s;
+}
+.radio-card:hover, .radio-card.checked { border-color: var(--amber); background: var(--amber-bg); }
+.radio-card input[type="radio"] { accent-color: var(--amber); width: 18px; height: 18px; margin-right: 0.75rem; }
+.radio-card .label { font-weight: 600; }
+.radio-card .price { color: var(--amber-deep); font-weight: 700; font-family: var(--font-display); }
+.input {
+  width: 100%; border: 1.5px solid var(--gray-light); border-radius: 10px;
+  padding: 0.85rem 1rem; font-family: var(--font-body); font-size: 1rem;
+  transition: border-color 0.2s; outline: none;
+}
+.input:focus { border-color: var(--amber); }
+
+/* Messages */
+.msg-area {
+  max-height: 400px; overflow-y: auto; padding: 0.5rem 0;
+  display: flex; flex-direction: column; gap: 0.75rem;
+}
+.msg-ia {
+  background: var(--amber-light); padding: 1rem 1.25rem; border-radius: 12px;
+  align-self: flex-start; max-width: 85%;
+}
+.msg-ia .sender { font-weight: 600; font-size: 0.85rem; color: var(--amber-deep); margin-bottom: 0.25rem; }
+.msg-ia .text { color: var(--charcoal); font-size: 0.95rem; }
+.msg-user {
+  background: var(--surface); padding: 1rem 1.25rem; border-radius: 12px;
+  align-self: flex-end; max-width: 85%; border: 1px solid var(--gray-light);
+}
+.msg-user .sender { font-weight: 600; font-size: 0.85rem; color: var(--gray-mid); margin-bottom: 0.25rem; }
+.msg-user .text { color: var(--charcoal); font-size: 0.95rem; }
+
+.chat-input-row {
+  display: flex; gap: 0.5rem; margin-top: 1rem;
+}
+.chat-input-row .input { flex: 1; }
+.chat-input-row .btn { width: auto; padding: 0.85rem 1.5rem; }
+
+/* Progress */
+.progress-bar {
+  width: 100%; height: 4px; background: var(--gray-light); border-radius: 4px; margin-bottom: 1.5rem; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; background: var(--amber); border-radius: 4px; transition: width 0.4s ease;
+}
+.progress-label { font-size: 0.8rem; color: var(--gray-mid); text-align: center; margin-top: -1rem; margin-bottom: 1rem; }
+
+/* Result */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem; }
+.stat-box { background: var(--cream); border-radius: 12px; padding: 1rem; text-align: center; }
+.stat-box .stat-label { font-size: 0.8rem; color: var(--gray-mid); }
+.stat-box .stat-value { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; color: var(--amber-deep); }
+
+.partner-card {
+  border: 1px solid var(--gray-light); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 0.75rem;
+}
+.partner-card h4 { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+.partner-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem; color: var(--gray-mid); margin-top: 0.5rem; }
+
+/* Upload zone */
+.upload-zone {
+  border: 2px dashed var(--gray-light); border-radius: 12px;
+  padding: 2rem; text-align: center; cursor: pointer; transition: border-color 0.2s;
+}
+.upload-zone:hover { border-color: var(--amber); }
+.upload-zone p { color: var(--gray-mid); }
+.upload-zone small { color: var(--gray-light); font-size: 0.8rem; }
+
+/* Sections */
+.step { display: none; }
+.step.active { display: block; }
+.section-title { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; margin-bottom: 1.5rem; }
+.form-group { margin-bottom: 1.25rem; }
+.form-label { display: block; font-size: 0.9rem; font-weight: 500; margin-bottom: 0.5rem; }
+
+/* Spinner */
+.spinner {
+  display: inline-block; width: 20px; height: 20px;
+  border: 2.5px solid rgba(255,255,255,0.3); border-top-color: white;
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+  vertical-align: middle; margin-right: 0.5rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Best match */
+.best-match {
+  background: var(--amber-bg); border: 1px solid var(--amber-light);
+  border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;
+}
+.best-match h4 { font-family: var(--font-display); font-weight: 700; color: var(--amber-deep); }
+.best-match p { font-size: 0.9rem; color: var(--charcoal); margin-top: 0.25rem; }
+
+/* Misc */
+.bordered { border-top: 1px solid var(--gray-light); padding-top: 1.25rem; margin-top: 1.25rem; }
+.list-disc { list-style: disc; padding-left: 1.25rem; font-size: 0.9rem; color: var(--charcoal); }
+.list-disc li { margin-bottom: 0.35rem; }
+.text-gray { color: var(--gray-mid); }
+.text-italic { font-style: italic; }
+.text-sm { font-size: 0.9rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.mb-3 { margin-bottom: 1.5rem; }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+</style>
 </head>
-<body class="bg-gray-50">
-    <nav class="bg-white shadow-sm">
-        <div class="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
-            <span class="text-2xl font-bold text-indigo-600">Credo</span>
-        </div>
-    </nav>
-
-    <div class="max-w-2xl mx-auto px-4 py-8">
-        <div id="step-payment" class="bg-white rounded-xl p-8 shadow-sm">
-            <h2 class="text-2xl font-bold mb-4">Paiement</h2>
-            <p class="text-gray-600 mb-6">Choisis ton offre pour débloquer l'analyse.</p>
-            <div class="space-y-4 mb-6">
-                <label class="block border rounded-lg p-4 cursor-pointer hover:border-indigo-600">
-                    <input type="radio" name="plan" value="2500" class="mr-3" checked>
-                    <span class="font-semibold">Rapport Simple</span>
-                    <span class="float-right text-indigo-600 font-bold">2,500 FCFA</span>
-                </label>
-                <label class="block border rounded-lg p-4 cursor-pointer hover:border-indigo-600">
-                    <input type="radio" name="plan" value="5000" class="mr-3">
-                    <span class="font-semibold">Rapport Complet</span>
-                    <span class="float-right text-indigo-600 font-bold">5,000 FCFA</span>
-                </label>
-            </div>
-            <div class="mb-4">
-                <label class="block text-sm font-medium mb-1">Numéro Mobile Money</label>
-                <input type="tel" id="phone" class="w-full border rounded-lg p-3" placeholder="Ex: 90 00 00 00">
-            </div>
-            <button onclick="startSession()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700">
-                Commencer
-            </button>
-        </div>
-
-        <div id="step-chat" class="hidden">
-            <div class="bg-white rounded-xl p-8 shadow-sm mb-4">
-                <div id="messages" class="space-y-4 mb-6 max-h-96 overflow-y-auto"></div>
-                <div class="flex gap-2">
-                    <input type="text" id="chat-input" class="flex-1 border rounded-lg p-3" placeholder="Réponds ici...">
-                    <button onclick="sendMessage()" class="bg-indigo-600 text-white px-6 rounded-lg hover:bg-indigo-700">Envoyer</button>
-                </div>
-            </div>
-
-            <div id="step-upload" class="hidden bg-white rounded-xl p-8 shadow-sm mb-4">
-                <h3 class="font-semibold mb-4">Documents requis</h3>
-                <div class="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-indigo-600">
-                    <p class="text-gray-600">Clique pour uploader</p>
-                    <p class="text-sm text-gray-400">Pièce d'identité, preuve de revenus, etc.</p>
-                    <input type="file" class="hidden" multiple>
-                </div>
-            </div>
-
-            <div id="step-result" class="hidden bg-white rounded-xl p-8 shadow-sm">
-                <h2 class="text-2xl font-bold mb-6">Ton résultat</h2>
-                <div id="result-content"></div>
-            </div>
-        </div>
+<body>
+<nav class="nav">
+  <div class="container">
+    <div style="display:flex;align-items:center;max-width:640px;margin:0 auto;padding:0 1.5rem;width:100%">
+      <a href="/" style="display:flex;align-items:center;gap:0.625rem;text-decoration:none">
+        <div class="nav-icon">C</div>
+        <span class="nav-title">Credo</span>
+      </a>
     </div>
+  </div>
+</nav>
 
-    <script>
-        let sessionId = '{{ session_id }}';
-        let questions = [
-            "Quelle est ton activité principale ?",
-            "Depuis combien de temps exerces-tu ?",
-            "Quel est ton revenu mensuel moyen ?",
-            "Quel montant souhaites-tu emprunter ?",
-            "As-tu déjà eu un crédit ?",
-            "As-tu une épargne ?",
-            "Quelle est la destination du prêt ?",
-            "As-tu des garanties à proposer ?"
-        ];
-        let qIdx = 0;
-        let answers = [];
+<div class="container" style="padding-top:2rem;padding-bottom:3rem">
 
-        function startSession() {
-            const plan = document.querySelector('input[name="plan"]:checked').value;
-            const phone = document.getElementById('phone').value;
-            if (!phone) { alert('Numéro requis'); return; }
+  <!-- Step: Payment -->
+  <div id="step-payment" class="step active card">
+    <h2 class="section-title">Paiement</h2>
+    <p class="text-gray text-sm mb-3">Choisis ton offre pour débloquer l'analyse.</p>
+    <div class="form-group">
+      <label class="radio-card checked" id="plan-2500">
+        <div style="display:flex;align-items:center">
+          <input type="radio" name="plan" value="2500" checked>
+          <span class="label">Rapport Simple</span>
+        </div>
+        <span class="price">2,500 FCFA</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="radio-card" id="plan-5000">
+        <div style="display:flex;align-items:center">
+          <input type="radio" name="plan" value="5000">
+          <span class="label">Rapport Complet</span>
+        </div>
+        <span class="price">5,000 FCFA</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Numéro Mobile Money</label>
+      <input type="tel" id="phone" class="input" placeholder="Ex: 90 00 00 00">
+    </div>
+    <button onclick="startSession()" id="btn-start" class="btn btn-primary">
+      Commencer
+    </button>
+  </div>
 
-            fetch('/api/session/start', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({phone, plan})
-            }).then(r => r.json()).then(data => {
-                sessionId = data.session_id;
-                history.replaceState(null, '', '/chat/' + sessionId);
-                document.getElementById('step-payment').classList.add('hidden');
-                document.getElementById('step-chat').classList.remove('hidden');
-                showNextQuestion();
-            }).catch(() => alert('Erreur de connexion. Réessaie.'));
-        }
+  <!-- Step: Chat -->
+  <div id="step-chat" class="step card">
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="progress-label" id="progress-label">Question 1/8</div>
+    <div id="messages" class="msg-area"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" class="input" placeholder="Réponds ici..." autocomplete="off">
+      <button onclick="sendMessage()" id="btn-send" class="btn btn-primary" style="width:auto;padding:0.85rem 1.5rem">Envoyer</button>
+    </div>
+  </div>
 
-        function showNextQuestion() {
-            const msgDiv = document.getElementById('messages');
-            msgDiv.innerHTML += `
-                <div class="bg-indigo-50 p-4 rounded-lg">
-                    <p class="font-medium">Credo IA</p>
-                    <p class="text-gray-700 mt-1">${questions[qIdx]}</p>
-                </div>`;
-            qIdx++;
-            msgDiv.scrollTop = msgDiv.scrollHeight;
-        }
+  <!-- Step: Upload -->
+  <div id="step-upload" class="step card">
+    <h2 class="section-title">Documents requis</h2>
+    <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+      <p style="margin-bottom:0.25rem">Clique pour uploader</p>
+      <small>Pièce d'identité, preuve de revenus, etc.</small>
+      <input type="file" id="file-input" class="hidden" multiple style="display:none">
+    </div>
+  </div>
 
-        function sendMessage() {
-            const input = document.getElementById('chat-input');
-            const text = input.value.trim();
-            if (!text) return;
+  <!-- Step: Result -->
+  <div id="step-result" class="step card">
+    <h2 class="section-title" style="text-align:center">Ton résultat</h2>
+    <div id="result-content"></div>
+  </div>
 
-            const msgDiv = document.getElementById('messages');
-            msgDiv.innerHTML += `<div class="bg-gray-100 p-4 rounded-lg"><p class="font-medium">Toi</p><p class="text-gray-700 mt-1">${text}</p></div>`;
-            answers.push(text);
-            input.value = '';
+</div>
 
-            if (qIdx < questions.length) {
-                setTimeout(() => showNextQuestion(), 500);
-            } else {
-                setTimeout(() => submitAnswers(), 500);
-            }
-        }
+<script>
+let sessionId = '{{ session_id }}';
+let questions = [
+  "Quelle est ton activité principale ?",
+  "Depuis combien de temps exerces-tu ?",
+  "Quel est ton revenu mensuel moyen ?",
+  "Quel montant souhaites-tu emprunter ?",
+  "As-tu déjà eu un crédit ?",
+  "As-tu une épargne ?",
+  "Quelle est la destination du prêt ?",
+  "As-tu des garanties à proposer ?"
+];
+let qIdx = 0;
+let answers = [];
+let loading = false;
 
-        function submitAnswers() {
-            fetch('/api/chat/' + sessionId + '/questionnaire-answers', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({answers, questions})
-            }).then(r => r.json()).then(() => analyze()).catch(() => alert('Erreur. Réessaie.'));
-        }
+document.addEventListener('DOMContentLoaded', function () {
+  if (sessionId) {
+    switchStep('step-chat');
+    setTimeout(showNextQuestion, 500);
+  }
+  document.getElementById('chat-input').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !loading) sendMessage();
+  });
+  document.querySelectorAll('.radio-card').forEach(function (el) {
+    el.addEventListener('click', function () {
+      document.querySelectorAll('.radio-card').forEach(function (c) { c.classList.remove('checked'); });
+      el.classList.add('checked');
+      el.querySelector('input[type="radio"]').checked = true;
+    });
+  });
+});
 
-        function analyze() {
-            fetch('/api/chat/' + sessionId + '/analyze', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'}
-            }).then(r => r.json()).then(data => {
-                document.getElementById('step-chat').classList.add('hidden');
-                const result = document.getElementById('result-content');
+function escHtml(str) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
 
-                const l2 = data.layer2 || {};
-                const l2recs = (l2.recommendations || []).slice(0, 3);
-                const l2summary = l2.summary || '';
-                const bestMatch = l2.best_match || '';
-                const bestReason = l2.best_reason || '';
-                const profil = data.profil || {};
+function setLoading(btnId, isLoading) {
+  var btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = isLoading;
+  if (isLoading) {
+    btn.dataset.text = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Chargement...';
+  } else {
+    btn.innerHTML = btn.dataset.text || btn.innerHTML;
+  }
+  loading = isLoading;
+}
 
-                result.innerHTML = `
-                    <div class="text-center mb-6">
-                        <div class="text-5xl font-bold text-indigo-600 mb-2">${data.score}/100</div>
-                        <p class="text-lg font-semibold" style="color: ${data.risk === 'Faible' ? 'green' : data.risk === 'Moyen' ? 'orange' : 'red'}">Risque ${data.risk}</p>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4 mb-4">
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <p class="text-gray-600">Revenu</p>
-                            <p class="text-xl font-bold">${(profil.monthly_income || 0).toLocaleString()} FCFA</p>
-                        </div>
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <p class="text-gray-600">Montant estimé</p>
-                            <p class="text-xl font-bold">${(data.max_amount || 0).toLocaleString()} FCFA</p>
-                        </div>
-                    </div>
-                    ${bestMatch ? `
-                    <div class="bg-indigo-50 p-4 rounded-lg mb-4 border border-indigo-200">
-                        <p class="font-bold text-indigo-700">Meilleur choix : ${bestMatch}</p>
-                        <p class="text-gray-700 mt-1">${bestReason}</p>
-                    </div>` : ''}
-                    <div class="border-t pt-4 mb-4">
-                        <p class="font-semibold mb-2">Institutions partenaires</p>
-                        ${l2recs.length > 0 ? l2recs.map(p => `
-                        <div class="border rounded-lg p-3 mb-2">
-                            <p class="font-medium">${p.name}</p>
-                            <div class="grid grid-cols-2 gap-2 text-sm text-gray-600 mt-1">
-                                <span>Taux estimé: ${p.estimated_rate ? p.estimated_rate + '%' : ''}</span>
-                                <span>Mensualité: ${p.estimated_monthly ? p.estimated_monthly.toLocaleString() + ' FCFA' : ''}</span>
-                            </div>
-                            <p class="text-gray-600 text-sm mt-1">${p.why || ''}</p>
-                        </div>
-                        `).join('') : (data.partners || []).map(p => `
-                        <div class="border rounded-lg p-3 mb-2">
-                            <p class="font-medium">${p.name}</p>
-                            <p class="text-gray-600 text-sm">Score: ${p.match_percent || ''}%</p>
-                            <div class="text-gray-600 text-sm mt-1">
-                                ${(p.strengths || []).map(s => '<span class="text-green-600">+ ' + s + '</span><br>').join('')}
-                                ${(p.issues || []).map(s => '<span class="text-red-600">- ' + s + '</span><br>').join('')}
-                            </div>
-                        </div>`).join('')}
-                    </div>
-                    ${l2summary ? `
-                    <div class="bg-gray-50 p-4 rounded-lg mb-4">
-                        <p class="text-gray-700 italic">${l2summary}</p>
-                    </div>` : ''}
-                    ${data.analysis ? `
-                    <div class="border-t pt-4 mb-4">
-                        <p class="font-semibold mb-2">Analyse</p>
-                        <p class="text-gray-700">${data.analysis}</p>
-                    </div>` : ''}
-                    ${(data.tips || []).length > 0 ? `
-                    <div class="border-t pt-4 mb-4">
-                        <p class="font-semibold mb-2">Conseils pour améliorer ton dossier</p>
-                        <ul class="list-disc pl-5 text-gray-700">
-                            ${data.tips.map(t => '<li>' + t + '</li>').join('')}
-                        </ul>
-                    </div>` : ''}
-                    <button onclick="window.print()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 mt-4">Télécharger le rapport</button>
-                `;
-                document.getElementById('step-result').classList.remove('hidden');
-            }).catch(() => alert('Erreur lors de l\'analyse. Réessaie.'));
-        }
+function switchStep(id) {
+  document.querySelectorAll('.step').forEach(function (s) { s.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+}
 
-        // Si session_id existante, démarre direct
-        if (sessionId) {
-            document.getElementById('step-payment').classList.add('hidden');
-            document.getElementById('step-chat').classList.remove('hidden');
-            setTimeout(() => showNextQuestion(), 500);
-        }
-    </script>
+function showError(msg) {
+  var m = document.getElementById('messages');
+  m.innerHTML += '<div class="msg-ia" style="background:var(--teal-light)"><div class="sender" style="color:var(--teal)">Credo IA</div><div class="text">' + escHtml(msg) + '</div></div>';
+  m.scrollTop = m.scrollHeight;
+}
+
+function startSession() {
+  var plan = document.querySelector('input[name="plan"]:checked').value;
+  var phone = document.getElementById('phone').value;
+  if (!phone) { alert('Numéro requis'); return; }
+
+  setLoading('btn-start', true);
+  fetch('/api/session/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({phone: phone, plan: plan})
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    sessionId = data.session_id;
+    history.replaceState(null, '', '/chat/' + sessionId);
+    setLoading('btn-start', false);
+    switchStep('step-chat');
+    showNextQuestion();
+  }).catch(function () {
+    setLoading('btn-start', false);
+    alert('Erreur de connexion. Réessaie.');
+  });
+}
+
+function showNextQuestion() {
+  var m = document.getElementById('messages');
+  m.innerHTML += '<div class="msg-ia"><div class="sender">Credo IA</div><div class="text">' + escHtml(questions[qIdx]) + '</div></div>';
+  qIdx++;
+  updateProgress();
+  m.scrollTop = m.scrollHeight;
+  document.getElementById('chat-input').focus();
+}
+
+function updateProgress() {
+  var pct = Math.min(Math.round((qIdx / questions.length) * 100), 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  if (qIdx <= questions.length) {
+    document.getElementById('progress-label').textContent = 'Question ' + qIdx + '/' + questions.length;
+  }
+}
+
+function sendMessage() {
+  var input = document.getElementById('chat-input');
+  var text = input.value.trim();
+  if (!text || loading) return;
+
+  var m = document.getElementById('messages');
+  m.innerHTML += '<div class="msg-user"><div class="sender">Toi</div><div class="text">' + escHtml(text) + '</div></div>';
+  answers.push(text);
+  input.value = '';
+  m.scrollTop = m.scrollHeight;
+
+  if (qIdx < questions.length) {
+    setTimeout(function () { showNextQuestion(); }, 500);
+  } else {
+    submitAnswers();
+  }
+}
+
+function submitAnswers() {
+  setLoading('btn-send', true);
+  fetch('/api/chat/' + sessionId + '/questionnaire-answers', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({answers: answers, questions: questions})
+  }).then(function (r) { return r.json(); }).then(function () {
+    analyze();
+  }).catch(function () {
+    setLoading('btn-send', false);
+    alert('Erreur. Réessaie.');
+  });
+}
+
+function analyze() {
+  fetch('/api/chat/' + sessionId + '/analyze', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'}
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    setLoading('btn-send', false);
+    switchStep('step-result');
+    renderResult(data);
+  }).catch(function () {
+    setLoading('btn-send', false);
+    alert('Erreur lors de l\'analyse. Réessaie.');
+  });
+}
+
+function renderResult(data) {
+  var l2 = data.layer2 || {};
+  var bestMatch = l2.best_match || '';
+  var bestReason = l2.best_reason || '';
+  var riskColor = data.risk === 'Faible' ? 'var(--success)' : data.risk === 'Moyen' ? 'var(--warn)' : 'var(--danger)';
+
+  var html = '';
+  html += '<div style="text-align:center;margin-bottom:1.5rem">';
+  html += '<div style="font-family:var(--font-display);font-weight:700;font-size:3.5rem;color:var(--amber-deep)">' + (data.score || 0) + '<span style="font-size:1.25rem;color:var(--gray-mid)">/100</span></div>';
+  html += '<p style="font-weight:600;color:' + riskColor + '">Risque ' + (data.risk || 'N/A') + '</p>';
+  html += '</div>';
+
+  if (bestMatch) {
+    html += '<div class="best-match" style="margin-bottom:1.5rem"><h4>Meilleur choix : ' + escHtml(bestMatch) + '</h4><p>' + escHtml(bestReason) + '</p></div>';
+  }
+
+  html += '<div class="bordered" style="text-align:center;padding:1.5rem 1rem;border-color:var(--amber-light);background:var(--amber-bg);border-radius:12px">';
+  html += '<p style="font-family:var(--font-display);font-weight:600;font-size:1.1rem;margin-bottom:0.5rem">Ton rapport complet est prêt</p>';
+  html += '<p class="text-gray text-sm" style="margin-bottom:1rem">Comparaison détaillée avec toutes les institutions, analyse personnalisée, plan d\'action.</p>';
+  html += '<a href="/report/' + sessionId + '" class="btn btn-primary" style="display:inline-block;width:auto;padding:0.85rem 2.5rem">Voir le rapport complet</a>';
+  html += '</div>';
+
+  document.getElementById('result-content').innerHTML = html;
+}
+</script>
 </body>
 </html>

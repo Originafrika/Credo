@@ -277,6 +277,7 @@ def view_report(session_id):
         report = build_comparison_report(answers)
     except Exception as e:
         return render_template("error.html", message=f"Erreur rapport: {e}")
+    l2 = report.get("layer2", {})
     return render_template("report.html",
         total=report.get("total_institutions", 0),
         eligible=report.get("eligible_count", 0),
@@ -285,6 +286,7 @@ def view_report(session_id):
         score=report.get("score", 0),
         risk=report.get("risk", "N/A"),
         max_amount=report.get("max_amount", 0),
+        realistic_max=report.get("profil", {}).get("realistic_max", 0),
         sector=report.get("profil", {}).get("sector", "N/A"),
         monthly_income=report.get("profil", {}).get("monthly_income", 0),
         amount_wanted=report.get("profil", {}).get("amount_wanted", 0),
@@ -295,6 +297,10 @@ def view_report(session_id):
         analysis=report.get("analysis", ""),
         missing_documents=report.get("missing_documents", []),
         improvement_tips=report.get("improvement_tips", []),
+        layer2_summary=l2.get("summary", ""),
+        layer2_best_match=l2.get("best_match", ""),
+        layer2_best_reason=l2.get("best_reason", ""),
+        layer2_recs=l2.get("recommendations", [])[:3],
     )
 
 @app.route("/api/documents/upload/<session_id>", methods=["POST"])
