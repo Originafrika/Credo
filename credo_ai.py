@@ -498,10 +498,11 @@ def extract_document_fields(image_url: str, doc_type: str) -> dict:
 
 def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict]]:
     """Retourne TOUS les partenaires actifs (sans LIMIT) et leurs produits."""
-    if not NEON_DSN:
+    dsn = os.environ.get("NEON_DSN", "") or NEON_DSN
+    if not dsn:
         return [], []
     try:
-        conn = psycopg2.connect(NEON_DSN)
+        conn = psycopg2.connect(dsn)
         cur = conn.cursor()
         cur.execute(
             """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
@@ -543,7 +544,9 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict]]:
         conn.close()
         return partners, products
     except Exception as e:
-        _log(f"_get_all_partners failed: {e}")
+        msg = f"_get_all_partners failed: {e}"
+        _log(msg)
+        import traceback; _log(traceback.format_exc()[:500])
         return [], []
 
 
