@@ -25,6 +25,7 @@ from credo_ai import (
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "credo-dev-2026")
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
 @app.after_request
 def security_headers(resp):
@@ -98,10 +99,18 @@ def init_db():
 init_db()
 
 _session_managers: dict[str, SessionManager] = {}
+_session_manager_timestamps: dict[str, float] = {}
 
 def _get_session_manager(session_id: str) -> SessionManager:
+    now = __import__('time').time()
+    if len(_session_managers) > 100:
+        stale = [k for k, t in _session_manager_timestamps.items() if now - t > 3600]
+        for k in stale:
+            _session_managers.pop(k, None)
+            _session_manager_timestamps.pop(k, None)
     if session_id not in _session_managers:
         _session_managers[session_id] = SessionManager(session_id)
+    _session_manager_timestamps[session_id] = now
     return _session_managers[session_id]
 
 @app.route("/api/questions")
@@ -497,7 +506,8 @@ def view_report(session_id):
         try:
             report = build_comparison_report(answers, document_extractions)
         except Exception as e:
-            return render_template("error.html", message=f"Erreur rapport: {e}")
+            print(f"[CREDO] report generation failed: {e}", flush=True)
+            return render_template("error.html", message="Erreur lors de la generation du rapport. Reessaie plus tard.")
         l2 = report.get("layer2", {})
         is_simple = plan == "2500"
         return render_template("report.html",
@@ -538,9 +548,17 @@ def upload_document(session_id):
         file = request.files["file"]
         if file.filename == "":
             return jsonify({"error": "Fichier vide"}), 400
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        if size > 5 * 1024 * 1024:
+            return jsonify({"error": "Fichier trop volumineux (max 5 Mo)"}), 400
+        allowed = {".pdf", ".jpg", ".jpeg", ".png"}
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in allowed:
+            return jsonify({"error": "Type de fichier non autorise (PDF, JPG, PNG)"}), 400
         doc_type = request.form.get("doc_type", "unknown")
-        ext = os.path.splitext(file.filename)[1] or ".bin"
-        file_name = f"doc_{session_id}_{doc_type}_{uuid.uuid4().hex[:8]}{ext}"
+        file_name = f"doc_{uuid.uuid4().hex}{ext}"
         os.makedirs("uploads", exist_ok=True)
         file.save(os.path.join("uploads", file_name))
         conn = get_db()

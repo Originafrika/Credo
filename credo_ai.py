@@ -8,9 +8,10 @@ from datetime import datetime
 from groq import Groq
 import psycopg2
 
-client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
+client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""), timeout=30)
 
 SCORE_MODEL = "llama-3.3-70b-versatile"
+CHAT_MODEL = "llama-3.1-8b-instant"
 VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 NEON_DSN = os.environ.get("NEON_DSN", "")
@@ -94,12 +95,18 @@ def _log(m: str):
     print(f"[CREDO] {m}")
 
 def generate_code() -> str:
-    return "CREDO-" + "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(5))
+    return "CREDO-" + "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
 
 
 def _extract_numbers(text: str) -> list[int]:
-    text = text.replace(".", "").replace(" ", "").replace(",", ".")
-    return [int(float(x)) for x in re.findall(r"\d+(?:\.\d+)?", text)]
+    text = re.sub(r'(\d)\s(\d)', r'\1\2', text)
+    text = text.replace(",", ".")
+    mult = 1
+    if "million" in text:
+        mult = 1000000
+    elif "mille" in text:
+        mult = 1000
+    return [int(float(x) * mult) for x in re.findall(r"\d+(?:\.\d+)?", text)]
 
 
 def _estimate_monthly_revenue(answers: list[dict]) -> int:
@@ -407,13 +414,12 @@ Questions en francais, "tu". 5 a 8 questions total. Chaque question < 15 mots.""
 
     try:
         resp = client.chat.completions.create(
-            model=SCORE_MODEL,
+            model=CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=600,
+            max_tokens=400,
         )
         raw = resp.choices[0].message.content
-        # Try to extract JSON from response
         start = raw.find('{')
         end = raw.rfind('}') + 1
         if start >= 0 and end > start:
@@ -497,10 +503,10 @@ Genere un questionnaire en BLOCS. Chaque bloc = 2 a 4 questions sur UN theme.
 5 a 8 questions. Francais, "tu"."""
     try:
         resp = client.chat.completions.create(
-            model=SCORE_MODEL,
+            model=CHAT_MODEL,
             messages=[{"role": "user", "content": prompt_text}],
             temperature=0.7,
-            max_tokens=600,
+            max_tokens=400,
         )
         raw = resp.choices[0].message.content
         start = raw.find('{')
@@ -558,11 +564,11 @@ Regles:
 
     try:
         resp = client.chat.completions.create(
-            model=SCORE_MODEL,
+            model=CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=600,
+            max_tokens=400,
         )
         result = json.loads(resp.choices[0].message.content)
         turn_info = session_manager.record_turn(result)
@@ -586,8 +592,6 @@ Regles:
 
     except Exception as e:
         _log(f"process_conversation_turn LLM call failed: {e}")
-        if session_manager.profile:
-            return "DONE"
         return "Peux-tu reformuler ?"
 
 # ==============================================================
@@ -657,11 +661,11 @@ Regles:
 
     try:
         resp = client.chat.completions.create(
-            model=SCORE_MODEL,
+            model=CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=800,
+            max_tokens=400,
         )
         data = json.loads(resp.choices[0].message.content)
         requests = data.get("requests", [])
