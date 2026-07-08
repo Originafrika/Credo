@@ -30,9 +30,11 @@ app.json_encoder = _JsonEncoder
 
 NEON_DSN = os.environ.get("NEON_DSN", "")
 if not NEON_DSN:
-    raise RuntimeError("NEON_DSN environment variable is required")
+    print("[CREDO] WARNING: NEON_DSN not set — running with mock data", flush=True)
 
 def get_db():
+    if not NEON_DSN:
+        raise RuntimeError("NEON_DSN not configured")
     return psycopg2.connect(NEON_DSN)
 
 def db_execute(conn, sql, params=None):
@@ -55,6 +57,8 @@ def db_close(conn):
         pass
 
 def init_db():
+    if not NEON_DSN:
+        return
     conn = get_db()
     for sql in [
         "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, phone TEXT, plan TEXT DEFAULT '5000', status TEXT DEFAULT 'payment_wait', code TEXT, payment_ref TEXT, payment_verified INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), completed_at TEXT, questionnaire TEXT, question_idx INTEGER DEFAULT 0)",
