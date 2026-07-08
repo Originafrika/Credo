@@ -322,32 +322,31 @@ def upload_document(session_id):
     db_close(conn)
     return jsonify({"document_id": doc_id, "storage_url": storage_url})
 
-@app.route("/api/debug/partners")
-def debug_partners():
-    import json, os, psycopg2
+@app.route("/api/debug/report/<session_id>")
+def debug_report(session_id):
     try:
-        dsn = os.environ.get("NEON_DSN", "")
-        conn = psycopg2.connect(dsn)
-        cur = conn.cursor()
-        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")
-        tables = [r[0] for r in cur.fetchall()]
-        results = {"tables": tables}
-        for t in tables:
-            cur.execute(f"SELECT COUNT(*) FROM {t}")
-            results[t] = cur.fetchone()[0]
-        cur.execute("SELECT DISTINCT unnest(countries) AS c FROM partners ORDER BY c")
-        all_countries = [r[0] for r in cur.fetchall()]
-        results["all_countries"] = all_countries
-        cur.execute("SELECT name, countries FROM partners LIMIT 10")
-        partners = [{"name": r[0], "countries": r[1]} for r in cur.fetchall()]
-        results["sample_partners"] = partners
-        cur.execute("SELECT name, min_amount, max_amount, sectors FROM partners WHERE 'TG' = ANY(countries) LIMIT 10")
-        tg = [{"name": r[0], "min": r[1], "max": r[2], "sectors": r[3]} for r in cur.fetchall()]
-        results["tg_partners"] = tg
-        conn.close()
-        return jsonify(results)
+        from credo_ai import build_comparison_report, _get_all_partners, _extract_country
+        conn = get_db()
+        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+        db_close(conn)
+        if not msgs:
+            return jsonify({"error": "no messages"})
+        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        country = _extract_country(answers)
+        p, pr = _get_all_partners(country)
+        report = build_comparison_report(answers)
+        return jsonify({
+            "country": country,
+            "partner_count": len(p),
+            "product_count": len(pr),
+            "eligible": report.get("eligible_count", 0),
+            "partial": report.get("partial_count", 0),
+            "not_eligible": report.get("not_eligible_count", 0),
+            "score": report.get("score", 0),
+            "top_names": [x["name"] for x in report.get("top_recommendations", [])],
+        })
     except Exception as e:
-        return jsonify({"error": str(e)[:500]}), 500
+        return jsonify({"ok": False, "error": str(e)[:500]}), 500
 
 @app.route("/verify/<code>")
 def verify_code(code):
