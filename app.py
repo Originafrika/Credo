@@ -335,9 +335,15 @@ def debug_partners():
         for t in tables:
             cur.execute(f"SELECT COUNT(*) FROM {t}")
             results[t] = cur.fetchone()[0]
-        cur.execute("SELECT name, countries FROM partners LIMIT 5")
+        cur.execute("SELECT DISTINCT unnest(countries) AS c FROM partners ORDER BY c")
+        all_countries = [r[0] for r in cur.fetchall()]
+        results["all_countries"] = all_countries
+        cur.execute("SELECT name, countries FROM partners LIMIT 10")
         partners = [{"name": r[0], "countries": r[1]} for r in cur.fetchall()]
         results["sample_partners"] = partners
+        cur.execute("SELECT name, countries FROM partners WHERE 'TG' = ANY(countries) LIMIT 5")
+        tg = [{"name": r[0], "countries": r[1]} for r in cur.fetchall()]
+        results["tg_partners"] = tg
         conn.close()
         return jsonify(results)
     except Exception as e:
