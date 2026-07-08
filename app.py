@@ -2,19 +2,18 @@ import base64
 import json
 import os
 import re
+import urllib.request
 import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from flask import Flask, render_template, request, jsonify, session, send_from_directory
+from flask import Flask, render_template, request, jsonify, session
 import psycopg2
 import psycopg2.extras
 
 from session_manager import SessionManager
 from credo_ai import (
     build_first_question,
-    build_questionnaire,
-    build_questionnaire_blocks,
     process_conversation_turn,
     build_document_requests,
     extract_document_fields,
@@ -42,6 +41,25 @@ class _JsonEncoder(json.JSONEncoder):
             return float(o)
         return super().default(o)
 app.json_encoder = _JsonEncoder
+
+def _blob_upload(file_bytes: bytes, filename: str, content_type: str) -> str | None:
+    token = os.environ.get("BLOB_READ_WRITE_TOKEN")
+    if not token:
+        print("[CREDO] BLOB_READ_WRITE_TOKEN not set", flush=True)
+        return None
+    url = f"https://blob.vercel-storage.com/{filename}"
+    req = urllib.request.Request(
+        url,
+        data=file_bytes,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": content_type},
+        method="PUT",
+    )
+    try:
+        resp = urllib.request.urlopen(req)
+        return json.loads(resp.read().decode("utf-8"))["url"]
+    except Exception as e:
+        print(f"[CREDO] blob upload failed: {e}", flush=True)
+        return None
 
 NEON_DSN = os.environ.get("NEON_DSN", "")
 if not NEON_DSN:
@@ -90,6 +108,7 @@ def init_db():
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS missing_docs TEXT")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS tips TEXT")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS analysis TEXT")
+        db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS report_data TEXT")
         db_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_results_session ON results(session_id)")
         print("[CREDO] migration ok", flush=True)
     except Exception as e:
@@ -248,27 +267,10 @@ def chat_message(session_id):
         last = db_fetchone(conn, "SELECT question FROM messages WHERE session_id = %s AND role = 'ia' ORDER BY id DESC LIMIT 1", (session_id,))
         last_q = last["question"] if last else "Question"
         db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, last_q, answer))
-        user_count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
     except Exception as e:
         db_close(conn)
         print(f"[CREDO] DB error in chat_message: {e}", flush=True)
         return jsonify({"error": "Erreur lors de l'enregistrement"}), 500
-
-    if user_count and user_count["c"] == 1:
-        try:
-            result = build_questionnaire_blocks(answer)
-            blocks = result["blocks"]
-            questions = [q for block in blocks for q in block]
-            if questions:
-                db_execute(conn, "UPDATE sessions SET questionnaire = %s, question_idx = 0 WHERE id = %s", (json.dumps(questions), session_id))
-                db_close(conn)
-                return jsonify({"type": "questionnaire", "blocks": blocks, "questions": questions, "done": False})
-            db_close(conn)
-            return jsonify({"done": True})
-        except Exception as e:
-            print(f"[CREDO] chat_message questionnaire error: {e}", flush=True)
-            db_close(conn)
-            return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
 
     try:
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
@@ -283,6 +285,9 @@ def chat_message(session_id):
     except Exception:
         db_close(conn)
         return jsonify({"error": "Credo IA indisponible."}), 503
+    if next_q == "DONE":
+        db_close(conn)
+        return jsonify({"done": True})
     try:
         db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, next_q))
     except Exception as e:
@@ -290,39 +295,7 @@ def chat_message(session_id):
         print(f"[CREDO] DB error inserting next question: {e}", flush=True)
         return jsonify({"error": "Erreur lors de l'enregistrement"}), 500
     db_close(conn)
-    if next_q == "DONE":
-        return jsonify({"done": True})
     return jsonify({"question": next_q, "done": False})
-
-@app.route("/api/chat/<session_id>/questionnaire-answers", methods=["POST"])
-def submit_questionnaire(session_id):
-    data = request.json
-    answers_list = data.get("answers", [])
-    questions_list = data.get("questions", [])
-    if not answers_list or not isinstance(answers_list, list):
-        return jsonify({"error": "Reponses invalides"}), 400
-    try:
-        conn = get_db()
-    except Exception as e:
-        print(f"[CREDO] DB connection error: {e}", flush=True)
-        return jsonify({"error": "Service indisponible"}), 503
-    try:
-        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
-        if not s:
-            db_close(conn)
-            return jsonify({"error": "Session invalide"}), 404
-        for i, ans in enumerate(answers_list):
-            if not ans or not ans.strip():
-                continue
-            q_text = questions_list[i] if i < len(questions_list) else "Question {}".format(i + 1)
-            db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, q_text, ans.strip()))
-        db_execute(conn, "UPDATE sessions SET questionnaire = NULL, question_idx = 0 WHERE id = %s", (session_id,))
-        db_close(conn)
-        return jsonify({"done": True, "accepted": len([a for a in answers_list if a and a.strip()])})
-    except Exception as e:
-        db_close(conn)
-        print(f"[CREDO] DB error in submit_questionnaire: {e}", flush=True)
-        return jsonify({"error": "Erreur lors de l'enregistrement"}), 500
 
 @app.route("/api/chat/<session_id>/document-requests", methods=["POST"])
 def document_requests(session_id):
@@ -364,24 +337,30 @@ def analyze(session_id):
                 except (json.JSONDecodeError, TypeError):
                     pass
                 continue
-            fpath = os.path.join("uploads", d["storage_url"])
-            if os.path.isfile(fpath):
-                try:
+            storage_val = d["storage_url"]
+            try:
+                if storage_val.startswith("http"):
+                    resp = urllib.request.urlopen(storage_val)
+                    file_bytes = resp.read()
+                else:
+                    fpath = os.path.join("uploads", storage_val)
+                    if not os.path.isfile(fpath):
+                        print(f"[CREDO] file not found: {storage_val}", flush=True)
+                        continue
                     with open(fpath, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("utf-8")
-                    ext = os.path.splitext(d["storage_url"])[1].lower()
-                    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp"}.get(ext.lstrip("."), "image/jpeg")
-                    data_url = f"data:{mime};base64,{b64}"
-                    extracted = extract_document_fields(data_url, d.get("doc_type", "unknown"))
-                    if extracted and "error" not in extracted:
-                        document_extractions.append(extracted)
-                        conn2 = get_db()
-                        db_execute(conn2, "UPDATE documents SET extracted_json = %s WHERE id = %s", (json.dumps(extracted), d["id"]))
-                        conn2.close()
-                except Exception as e:
-                    print(f"[CREDO] vision extract failed for {d['storage_url']}: {e}", flush=True)
-            else:
-                print(f"[CREDO] file not found for vision: {d['storage_url']}", flush=True)
+                        file_bytes = f.read()
+                b64 = base64.b64encode(file_bytes).decode("utf-8")
+                ext = os.path.splitext(storage_val)[1].lower()
+                mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp"}.get(ext.lstrip("."), "image/jpeg")
+                data_url = f"data:{mime};base64,{b64}"
+                extracted = extract_document_fields(data_url, d.get("doc_type", "unknown"))
+                if extracted and "error" not in extracted:
+                    document_extractions.append(extracted)
+                    conn2 = get_db()
+                    db_execute(conn2, "UPDATE documents SET extracted_json = %s WHERE id = %s", (json.dumps(extracted), d["id"]))
+                    conn2.close()
+            except Exception as e:
+                print(f"[CREDO] vision extract failed for {d['storage_url']}: {e}", flush=True)
 
         report = build_comparison_report(answers, document_extractions)
         code = None
@@ -389,8 +368,8 @@ def analyze(session_id):
         if plan == "5000":
             code = generate_code()
         db_execute(conn,
-            "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis",
-            (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", []) if plan == "5000" else report.get("top_recommendations", [])[:1]), json.dumps(report.get("missing_documents", []) if plan == "5000" else []), json.dumps(report.get("improvement_tips", []) if plan == "5000" else []), code, report.get("analysis", "") if plan == "5000" else "")
+            "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis, report_data) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis, report_data=excluded.report_data",
+            (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", []) if plan == "5000" else report.get("top_recommendations", [])[:1]), json.dumps(report.get("missing_documents", []) if plan == "5000" else []), json.dumps(report.get("improvement_tips", []) if plan == "5000" else []), code, report.get("analysis", "") if plan == "5000" else "", json.dumps(report))
         )
         db_execute(conn, "UPDATE sessions SET status = 'completed', code = %s, completed_at = NOW() WHERE id = %s", (code, session_id))
         db_close(conn)
@@ -458,9 +437,12 @@ def api_report(session_id):
         if not s:
             db_close(conn)
             return jsonify({"error": "Session invalide"}), 404
+        cached = db_fetchone(conn, "SELECT report_data FROM results WHERE session_id = %s AND report_data IS NOT NULL", (session_id,))
+        if cached and cached["report_data"]:
+            db_close(conn)
+            return jsonify(json.loads(cached["report_data"]))
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
         docs = db_execute(conn, "SELECT doc_type, storage_url, extracted_json FROM documents WHERE session_id = %s", (session_id,))
-        db_close(conn)
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
         document_extractions = []
         for d in docs:
@@ -472,7 +454,11 @@ def api_report(session_id):
         try:
             report = build_comparison_report(answers, document_extractions)
         except Exception as e:
+            db_close(conn)
             return jsonify({"error": f"Erreur: {str(e)[:200]}"}), 503
+        db_execute(conn, "INSERT INTO results (session_id, report_data) VALUES (%s, %s) ON CONFLICT (session_id) DO UPDATE SET report_data=excluded.report_data",
+                   (session_id, json.dumps(report)))
+        db_close(conn)
         return jsonify(report)
     except Exception as e:
         db_close(conn)
@@ -492,22 +478,29 @@ def view_report(session_id):
             db_close(conn)
             return render_template("error.html", message="Session invalide")
         plan = s.get("plan", "2500")
-        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
-        docs = db_execute(conn, "SELECT doc_type, storage_url, extracted_json FROM documents WHERE session_id = %s", (session_id,))
+        cached = db_fetchone(conn, "SELECT report_data FROM results WHERE session_id = %s AND report_data IS NOT NULL", (session_id,))
+        if cached and cached["report_data"]:
+            report = json.loads(cached["report_data"])
+        else:
+            msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+            docs = db_execute(conn, "SELECT doc_type, storage_url, extracted_json FROM documents WHERE session_id = %s", (session_id,))
+            answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+            document_extractions = []
+            for d in docs:
+                if d.get("extracted_json"):
+                    try:
+                        document_extractions.append(json.loads(d["extracted_json"]))
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            try:
+                report = build_comparison_report(answers, document_extractions)
+            except Exception as e:
+                db_close(conn)
+                print(f"[CREDO] report generation failed: {e}", flush=True)
+                return render_template("error.html", message="Erreur lors de la generation du rapport. Reessaie plus tard.")
+            db_execute(conn, "INSERT INTO results (session_id, report_data) VALUES (%s, %s) ON CONFLICT (session_id) DO UPDATE SET report_data=excluded.report_data",
+                       (session_id, json.dumps(report)))
         db_close(conn)
-        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-        document_extractions = []
-        for d in docs:
-            if d.get("extracted_json"):
-                try:
-                    document_extractions.append(json.loads(d["extracted_json"]))
-                except (json.JSONDecodeError, TypeError):
-                    pass
-        try:
-            report = build_comparison_report(answers, document_extractions)
-        except Exception as e:
-            print(f"[CREDO] report generation failed: {e}", flush=True)
-            return render_template("error.html", message="Erreur lors de la generation du rapport. Reessaie plus tard.")
         l2 = report.get("layer2", {})
         is_simple = plan == "2500"
         return render_template("report.html",
@@ -559,12 +552,14 @@ def upload_document(session_id):
             return jsonify({"error": "Type de fichier non autorise (PDF, JPG, PNG)"}), 400
         doc_type = request.form.get("doc_type", "unknown")
         file_name = f"doc_{uuid.uuid4().hex}{ext}"
-        os.makedirs("uploads", exist_ok=True)
-        file.save(os.path.join("uploads", file_name))
+        file_bytes = file.read()
+        blob_url = _blob_upload(file_bytes, file_name, f"application/{ext.lstrip('.')}")
+        if not blob_url:
+            return jsonify({"error": "Erreur lors du stockage"}), 500
         conn = get_db()
-        db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, file_name))
+        db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, blob_url))
         db_close(conn)
-        return jsonify({"status": "ok", "filename": file_name})
+        return jsonify({"status": "ok", "filename": blob_url})
     except Exception as e:
         print(f"[CREDO] upload error: {e}", flush=True)
         return jsonify({"error": "Erreur lors de l'upload"}), 500
@@ -622,10 +617,6 @@ def update_verify(code):
         db_close(conn)
         print(f"[CREDO] DB error in update_verify: {e}", flush=True)
         return jsonify({"error": "Erreur lors de la mise à jour"}), 500
-
-@app.route("/uploads/<filename>")
-def uploaded_file(filename):
-    return send_from_directory("uploads", filename)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

@@ -250,8 +250,6 @@ label { display: block; }
 
   <!-- Step: Chat -->
   <div id="step-chat" class="step card">
-    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
-    <div class="progress-label" id="progress-label">Question 1/8</div>
     <div id="messages" class="msg-area"></div>
     <div class="chat-input-row">
       <input type="text" id="chat-input" class="input" placeholder="Réponds ici..." autocomplete="off">
@@ -297,11 +295,7 @@ label { display: block; }
 
 <script>
 var sessionId = '{{ session_id }}';
-var questions = [];
-var qIdx = 0;
 var loading = false;
-var projectDesc = '';
-var totalProgress = {done: 0, total: 8};
 
 document.addEventListener('DOMContentLoaded', function () {
   if (sessionId) {
@@ -380,25 +374,12 @@ function startSession() {
     history.replaceState(null, '', '/chat/' + sessionId);
     setLoading('btn-start', false);
     switchStep('step-chat');
-    questions = data.questions || [];
-    qIdx = 0;
-    totalProgress.total = Math.max(questions.length || 6, 4);
     showMsg('ia', data.first_question);
-    totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total);
-    updateProgress(totalProgress.done, totalProgress.total);
     document.getElementById('chat-input').focus();
   }).catch(function () {
     setLoading('btn-start', false);
     showError('Erreur de connexion. Reessaie.');
   });
-}
-
-function updateProgress(done, total) {
-  var t = total || questions.length || totalProgress.total || 1;
-  var d = done !== undefined ? done : Math.min(qIdx, t);
-  var pct = Math.round((d / t) * 100);
-  document.getElementById('progress-fill').style.width = pct + '%';
-  document.getElementById('progress-label').textContent = 'Progrès : ' + d + '/' + t;
 }
 
 function sendMessage() {
@@ -408,70 +389,23 @@ function sendMessage() {
 
   showMsg('user', text);
   input.value = '';
+  setLoading('btn-send', true);
 
-  if (qIdx === 0 && !projectDesc) {
-    // First answer = project description, send to backend to generate questionnaire
-    projectDesc = text;
-    setLoading('btn-send', true);
-    fetch('/api/chat/' + sessionId + '/message', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({answer: text})
-    }).then(function (r) { return r.json(); }).then(function (data) {
-      setLoading('btn-send', false);
-      if (data.questions && data.questions.length > 0) {
-        questions = data.questions;
-        qIdx = 0;
-        totalProgress.total = Math.max(questions.length + totalProgress.done, totalProgress.total);
-        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total); updateProgress(totalProgress.done, totalProgress.total); }, 600);
-      } else if (data.question) {
-        totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total);
-        updateProgress(totalProgress.done, totalProgress.total);
-        setTimeout(function () { showMsg('ia', data.question); }, 600);
-      } else if (data.done) {
-        finishChat();
-      } else {
-        setTimeout(function () { showMsg('ia', 'ok, on termine avec ca.'); }, 600);
-        finishChat();
-      }
-    }).catch(function () {
-      setLoading('btn-send', false);
-      setTimeout(function () { showMsg('ia', 'Questionnaire pret. Reponds aux questions suivantes.'); }, 600);
-    });
-  } else if (qIdx <= questions.length) {
-    setLoading('btn-send', true);
-    fetch('/api/chat/' + sessionId + '/message', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({answer: text})
-    }).then(function (r) { return r.json(); }).then(function (data) {
-      setLoading('btn-send', false);
-      if (data.question && !data.done) {
-        if (data.question === 'DONE') {
-          finishChat();
-        } else {
-          totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total);
-          updateProgress(totalProgress.done, totalProgress.total);
-          setTimeout(function () { showMsg('ia', data.question); }, 400);
-        }
-      } else if (data.done) {
-        finishChat();
-      } else if (qIdx < questions.length) {
-        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total); updateProgress(totalProgress.done, totalProgress.total); }, 500);
-      } else {
-        finishChat();
-      }
-    }).catch(function () {
-      setLoading('btn-send', false);
-      if (qIdx < questions.length) {
-        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total); updateProgress(totalProgress.done, totalProgress.total); }, 500);
-      } else {
-        finishChat();
-      }
-    });
-  } else {
-    finishChat();
-  }
+  fetch('/api/chat/' + sessionId + '/message', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({answer: text})
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    setLoading('btn-send', false);
+    if (data.done) {
+      finishChat();
+    } else if (data.question) {
+      setTimeout(function () { showMsg('ia', data.question); }, 400);
+    }
+  }).catch(function () {
+    setLoading('btn-send', false);
+    showError('Erreur de connexion. Reessaie.');
+  });
 }
 
 var uploadedFiles = [];
