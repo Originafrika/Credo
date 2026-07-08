@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -21,6 +22,15 @@ from credo_ai import (
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "credo-dev-2026")
+
+@app.after_request
+def security_headers(resp):
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-XSS-Protection"] = "1; mode=block"
+    resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return resp
 
 class _JsonEncoder(json.JSONEncoder):
     def default(self, o):
@@ -174,8 +184,15 @@ def resume_session(session_id):
 @app.route("/api/session/start", methods=["POST"])
 def start_session():
     data = request.json
-    phone = data.get("phone", "")
+    phone = data.get("phone", "").strip()
     plan = data.get("plan", "2500")
+    if not phone:
+        return jsonify({"error": "Numero de telephone requis"}), 400
+    cleaned = re.sub(r'[\s\+\-\(\)]', '', phone)
+    if not re.match(r'^\d{8,15}$', cleaned):
+        return jsonify({"error": "Numero de telephone invalide (8-15 chiffres)"}), 400
+    if plan not in ("2500", "5000"):
+        plan = "2500"
     session_id = uuid.uuid4().hex[:8]
     try:
         conn = get_db()
@@ -183,7 +200,7 @@ def start_session():
         print(f"[CREDO] DB connection error: {e}", flush=True)
         return jsonify({"error": "Service indisponible"}), 503
     try:
-        db_execute(conn, "INSERT INTO sessions (id, phone, plan) VALUES (%s, %s, %s)", (session_id, phone, plan))
+        db_execute(conn, "INSERT INTO sessions (id, phone, plan) VALUES (%s, %s, %s)", (session_id, cleaned, plan))
         first_q = build_first_question()
         db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, first_q))
         db_close(conn)

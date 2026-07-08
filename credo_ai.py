@@ -516,6 +516,17 @@ Genere un questionnaire en BLOCS. Chaque bloc = 2 a 4 questions sur UN theme.
 
 _last_questions: list[str] = []
 
+_FALLBACK_QUESTIONS = [
+    "Quel est ton revenu mensuel moyen ?",
+    "Depuis combien de temps exerces-tu ?",
+    "Quel montant souhaites-tu emprunter ?",
+    "As-tu des garanties a proposer ?",
+    "As-tu deja eu un credit ?",
+    "As-tu une epargne ?",
+    "Quelle est la destination du pret ?",
+    "Peux-tu fournir des documents (piece d identite, justificatif de revenus) ?",
+]
+
 def build_next_question(answers: list[dict]) -> str:
     """LLM decide: infos suffisantes (DONE), clarification, ou demande document."""
     global _last_questions
@@ -529,13 +540,18 @@ Il te faut au moins: activite, revenu, montant, duree, garantie.
 Si toutes ces infos sont presentes (memes partielles), reponds: DONE
 Sinon, pose UNE question courte. Max 12 mots. Naturel, en "tu"."""
 
-    resp = client.chat.completions.create(
-        model=SCORE_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.5,
-        max_tokens=80,
-    )
-    q = resp.choices[0].message.content.strip().strip('"').strip("'")
+    try:
+        resp = client.chat.completions.create(
+            model=SCORE_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+            max_tokens=80,
+        )
+        q = resp.choices[0].message.content.strip().strip('"').strip("'")
+    except Exception as e:
+        _log(f"build_next_question Groq failed: {e}")
+        return _fallback_question(answers)
+
     if "DONE" in q.upper() and len(q) < 10:
         _last_questions.clear()
         return "DONE"
@@ -549,6 +565,44 @@ Sinon, pose UNE question courte. Max 12 mots. Naturel, en "tu"."""
         _last_questions.pop(0)
 
     return q if q else "Peux-tu preciser ?"
+
+
+def _fallback_question(answers: list[dict]) -> str:
+    """Fallback quand Groq est down: pose les questions manquantes une par une."""
+    asked_topics = set()
+    for a in answers:
+        q = (a.get("q") or "").lower()
+        r = (a.get("a") or "").lower()
+        asked_topics.add(q[:40])
+        if "gagnes" in q or "revenu" in q:
+            asked_topics.add("revenu")
+        if "combien" in q or "montant" in q or "emprunter" in q:
+            asked_topics.add("montant")
+        if "temps" in q or "depuis" in q:
+            asked_topics.add("duree")
+        if "garantie" in q:
+            asked_topics.add("garantie")
+        if "credit" in q or "deja" in q:
+            asked_topics.add("credit")
+        if "epargne" in q:
+            asked_topics.add("epargne")
+        if "destination" in q or "quoi" in q:
+            asked_topics.add("destination")
+    if "revenu" not in asked_topics:
+        return "Quel est ton revenu mensuel moyen ?"
+    if "montant" not in asked_topics:
+        return "Quel montant souhaites-tu emprunter ?"
+    if "duree" not in asked_topics:
+        return "Depuis combien de temps exerces-tu ?"
+    if "garantie" not in asked_topics:
+        return "As-tu des garanties a proposer ?"
+    if "credit" not in asked_topics:
+        return "As-tu deja eu un credit ?"
+    if "epargne" not in asked_topics:
+        return "As-tu une epargne ?"
+    if "destination" not in asked_topics:
+        return "Quelle est la destination du pret ?"
+    return "DONE"
 
 # ==============================================================
 # DOCUMENT EXTRACTION (Vision)
