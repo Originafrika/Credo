@@ -428,6 +428,7 @@ _last_questions: list[str] = []
 
 def build_next_question(answers: list[dict]) -> str:
     """LLM decide: infos suffisantes (DONE), clarification, ou demande document."""
+    global _last_questions
     context = _compact_history(answers)
     hist = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in context)
 
@@ -450,7 +451,6 @@ Sinon, pose UNE question courte. Max 12 mots. Naturel, en "tu"."""
         return "DONE"
 
     # Loop detection: same question asked 2+ times → force DONE
-    global _last_questions
     if len(_last_questions) >= 2 and all(q == prev for prev in _last_questions[-2:]):
         _last_questions.clear()
         return "DONE"
