@@ -263,25 +263,29 @@ label { display: block; }
 
 <script>
 let sessionId = '{{ session_id }}';
-let questions = [
-  "Quelle est ton activité principale ?",
-  "Depuis combien de temps exerces-tu ?",
-  "Quel est ton revenu mensuel moyen ?",
-  "Quel montant souhaites-tu emprunter ?",
-  "As-tu déjà eu un crédit ?",
-  "As-tu une épargne ?",
-  "Quelle est la destination du prêt ?",
-  "As-tu des garanties à proposer ?"
-];
+let questions = [];
 let qIdx = 0;
 let answers = [];
 let loading = false;
 
 document.addEventListener('DOMContentLoaded', function () {
-  if (sessionId) {
-    switchStep('step-chat');
-    setTimeout(showNextQuestion, 500);
-  }
+  fetch('/api/questions').then(function (r) { return r.json(); }).then(function (data) {
+    questions = data.questions || [
+      "Quelle est ton activité principale ?",
+      "Depuis combien de temps exerces-tu ?",
+      "Quel est ton revenu mensuel moyen ?",
+      "Quel montant souhaites-tu emprunter ?",
+      "As-tu déjà eu un crédit ?",
+      "As-tu une épargne ?",
+      "Quelle est la destination du prêt ?",
+      "As-tu des garanties à proposer ?",
+      "As-tu un RC ou une patente ?"
+    ];
+    if (sessionId) {
+      switchStep('step-chat');
+      setTimeout(showNextQuestion, 500);
+    }
+  });
   document.getElementById('chat-input').addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !loading) sendMessage();
   });

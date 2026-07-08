@@ -16,6 +16,7 @@ from credo_ai import (
     extract_document_fields,
     generate_code,
     build_comparison_report,
+    _get_all_partners,
 )
 
 app = Flask(__name__)
@@ -92,6 +93,57 @@ def ensure_migration():
         print("[CREDO] migration ok", flush=True)
     except Exception as e:
         print(f"[CREDO] migration failed: {e}", flush=True)
+
+@app.route("/api/questions")
+def get_questions():
+    default = [
+        "Quelle est ton activité principale ?",
+        "Depuis combien de temps exerces-tu ?",
+        "Quel est ton revenu mensuel moyen ?",
+        "Quel montant souhaites-tu emprunter ?",
+        "As-tu déjà eu un crédit ?",
+        "As-tu une épargne ?",
+        "Quelle est la destination du prêt ?",
+        "As-tu des garanties à proposer ?",
+        "As-tu un RC ou une patente ?",
+    ]
+    try:
+        partners, products = _get_all_partners()
+        if not partners:
+            return jsonify({"questions": default})
+        sectors = set()
+        amounts = []
+        has_docs = False
+        for p in partners:
+            if p.get("sectors"):
+                for s in p["sectors"]:
+                    sectors.add(s)
+            if p.get("min_amount"):
+                amounts.append(p["min_amount"])
+            if p.get("max_amount"):
+                amounts.append(p["max_amount"])
+            if p.get("docs"):
+                has_docs = True
+        min_a = min(amounts) if amounts else 50000
+        max_a = max(amounts) if amounts else 5000000
+        questions = [
+            f"Quelle est ton activité principale ?",
+        ]
+        if len(sectors) > 1:
+            sect_list = ", ".join(sorted(sectors)[:5])
+            questions.append(f"Dans quel secteur exerces-tu ? ({sect_list}, ou autre)")
+        questions.append("Depuis combien de temps exerces-tu ?")
+        questions.append("Quel est ton revenu mensuel moyen ?")
+        questions.append(f"Quel montant souhaites-tu emprunter ? (fourchette disponible : {min_a:,} - {max_a:,} FCFA)")
+        questions.append("As-tu déjà eu un crédit ?")
+        questions.append("As-tu une épargne ?")
+        questions.append("Quelle est la destination du prêt ?")
+        questions.append("As-tu des garanties à proposer ?")
+        if has_docs:
+            questions.append("Peux-tu fournir des documents (pièce d'identité, justificatif de revenus, etc.) ?")
+        return jsonify({"questions": questions})
+    except Exception as e:
+        return jsonify({"questions": default})
 
 @app.route("/")
 def index():

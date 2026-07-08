@@ -236,6 +236,45 @@
         }
         .step-card p { font-size: 0.9rem; color: var(--gray-mid); line-height: 1.55; }
 
+        /* Demo */
+        .demo-wrap {
+            background: var(--surface); border-radius: 20px; padding: 2rem;
+            max-width: 580px; margin: 0 auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.06);
+        }
+        .demo-score {
+            text-align: center; padding: 1.5rem 0 1rem;
+        }
+        .demo-score .num {
+            font-family: var(--font-display); font-weight: 700; font-size: 3rem;
+            color: var(--amber-deep);
+        }
+        .demo-score .denom { font-size: 1rem; color: var(--gray-mid); }
+        .demo-score .risk { font-size: 0.85rem; font-weight: 600; margin-top: 0.15rem; }
+        .demo-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 1.25rem 0;
+        }
+        .demo-cell {
+            background: var(--cream); border-radius: 10px; padding: 0.75rem; text-align: center;
+        }
+        .demo-cell .lbl { font-size: 0.75rem; color: var(--gray-mid); }
+        .demo-cell .val { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+        .demo-recs { margin: 1rem 0; }
+        .demo-rec {
+            border: 1px solid var(--gray-light); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.5rem;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .demo-rec .name { font-weight: 600; font-size: 0.9rem; }
+        .demo-rec .match {
+            background: var(--amber); color: white; border-radius: 9999px;
+            padding: 0.15rem 0.65rem; font-size: 0.75rem; font-weight: 700;
+        }
+        .demo-docs {
+            font-size: 0.8rem; color: var(--gray-mid); padding: 0.5rem 0;
+            border-top: 1px solid var(--gray-light); margin-top: 0.75rem; padding-top: 0.75rem;
+        }
+        .demo-docs span { display: inline-block; margin-right: 0.5rem; }
+
         /* Pricing */
         .pricing-bg { background: var(--surface); }
         .pricing-grid {
@@ -422,12 +461,53 @@
                 <div class="step-card">
                     <div class="step-num">2</div>
                     <h3>L'IA analyse ton profil</h3>
-                    <p>Tu réponds à quelques questions. Tu peux ajouter tes documents pour plus de précision.</p>
+                    <p>Tu réponds à des questions adaptées aux institutions partenaires. L'IA compare ta situation à leurs conditions réelles.</p>
                 </div>
                 <div class="step-card">
                     <div class="step-num">3</div>
-                    <h3>Tu reçois ton résultat</h3>
-                    <p>Score, montant maximum, institution recommandée et conseils personnalisés.</p>
+                    <h3>Tu reçois ton rapport</h3>
+                    <p>Score, montant maximum, comparaison complète de toutes les institutions, et plan d'action personnalisé.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section style="background:var(--cream);padding:3rem 0">
+        <div class="container">
+            <div class="section-title">
+                <h2>Exemple de rapport</h2>
+                <p>Voici à quoi ressemble ton résultat — des données réelles, pas une simulation.</p>
+            </div>
+            <div class="demo-wrap">
+                <div class="demo-score">
+                    <div><span class="num">72</span><span class="denom">/100</span></div>
+                    <div class="risk" style="color:var(--success)">Risque Faible</div>
+                </div>
+                <div class="demo-grid">
+                    <div class="demo-cell"><div class="lbl">Revenu mensuel</div><div class="val">250,000 FCFA</div></div>
+                    <div class="demo-cell"><div class="lbl">Capacité max</div><div class="val">1,500,000 FCFA</div></div>
+                    <div class="demo-cell"><div class="lbl">Secteur</div><div class="val">Commerce</div></div>
+                    <div class="demo-cell"><div class="lbl">Garantie</div><div class="val">Oui</div></div>
+                </div>
+                <p style="font-weight:600;font-size:0.85rem;color:var(--gray-mid);margin-bottom:0.5rem">Meilleures options</p>
+                <div class="demo-recs">
+                    <div class="demo-rec">
+                        <span class="name">Ecobank Togo</span>
+                        <span class="match">Éligible</span>
+                    </div>
+                    <div class="demo-rec">
+                        <span class="name">ALAFIA</span>
+                        <span class="match" style="background:var(--warn)">85%</span>
+                    </div>
+                    <div class="demo-rec">
+                        <span class="name">WARI</span>
+                        <span class="match" style="background:var(--warn)">72%</span>
+                    </div>
+                </div>
+                <div class="demo-docs">
+                    <span>Documents :</span>
+                    <span>Pièce d'identité</span>
+                    <span>• Preuve de revenus</span>
                 </div>
             </div>
         </div>
@@ -480,7 +560,7 @@
                 </div>
                 <div class="faq-item">
                     <h3>C'est gratuit ?</h3>
-                    <p>Non. Le service est payant à partir de 2,500 FCFA. Pas de chat gratuit, pas de démo bidon. Tu paies, tu obtiens ton diagnostic réel.</p>
+                    <p>Non. Le service est payant à partir de 2,500 FCFA. Mais tu peux voir un exemple de rapport ci-dessus pour comprendre ce que tu obtiens avant de payer.</p>
                 </div>
                 <div class="faq-item">
                     <h3>Je dois me déplacer ?</h3>
@@ -489,6 +569,10 @@
                 <div class="faq-item">
                     <h3>Je suis informel, ça marche pour moi ?</h3>
                     <p>Credo est fait pour toi. Notre IA est conçue pour évaluer les profils sans fiche de paie ni relevé bancaire. L'informel est notre spécialité.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>Les questions sont adaptées à ma situation ?</h3>
+                    <p>Oui. Les questions sont générées en fonction des institutions financières disponibles et de leurs conditions. On demande précisément ce qu'il faut pour te comparer à chaque partenaire.</p>
                 </div>
                 <div class="faq-item">
                     <h3>Et si je ne suis pas solvable ?</h3>
