@@ -325,25 +325,32 @@ def upload_document(session_id):
 @app.route("/api/debug/report/<session_id>")
 def debug_report(session_id):
     try:
-        from credo_ai import build_comparison_report, _get_all_partners, _extract_country
+        from credo_ai import _get_all_partners
         conn = get_db()
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
         db_close(conn)
         if not msgs:
             return jsonify({"error": "no messages"})
         answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
-        country = _extract_country(answers)
-        p, pr = _get_all_partners(country)
-        report = build_comparison_report(answers)
+        # Test _get_all_partners directly
+        import os, psycopg2
+        dsn = os.environ.get("NEON_DSN", "")
+        try:
+            conn2 = psycopg2.connect(dsn)
+            cur = conn2.cursor()
+            cur.execute("SELECT name FROM partners WHERE 'TG' = ANY(countries) LIMIT 5")
+            direct = [r[0] for r in cur.fetchall()]
+            conn2.close()
+            direct_count = len(direct)
+        except Exception as e2:
+            direct = [f"DB error: {e2}"]
+            direct_count = -1
+        p, pr = _get_all_partners("TG")
         return jsonify({
-            "country": country,
-            "partner_count": len(p),
-            "product_count": len(pr),
-            "eligible": report.get("eligible_count", 0),
-            "partial": report.get("partial_count", 0),
-            "not_eligible": report.get("not_eligible_count", 0),
-            "score": report.get("score", 0),
-            "top_names": [x["name"] for x in report.get("top_recommendations", [])],
+            "direct_tg_count": direct_count,
+            "direct_tg": direct,
+            "get_all_partners_count": len(p),
+            "get_all_products_count": len(pr),
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:500]}), 500
