@@ -152,6 +152,19 @@ label { display: block; }
 .upload-zone p { color: var(--gray-mid); }
 .upload-zone small { color: var(--gray-light); font-size: 0.8rem; }
 
+/* Doc request card */
+.doc-req {
+  background: var(--cream); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 0.75rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+}
+.doc-req .info { flex: 1; }
+.doc-req .label { font-weight: 600; font-size: 0.9rem; }
+.doc-req .reason { font-size: 0.8rem; color: var(--gray-mid); margin-top: 0.15rem; }
+.doc-req .actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+.doc-req .actions .btn-sm { padding: 0.5rem 0.85rem; font-size: 0.8rem; }
+.doc-req.done { opacity: 0.6; }
+.doc-req.done .status { color: var(--success); font-size: 0.8rem; font-weight: 600; }
+
 /* Sections */
 .step { display: none; }
 .step.active { display: block; }
@@ -246,14 +259,25 @@ label { display: block; }
     </div>
   </div>
 
-  <!-- Step: Upload -->
+  <!-- Step: Targeted Docs -->
+  <div id="step-docs" class="step card">
+    <h2 class="section-title">Documents pour ton dossier</h2>
+    <p class="text-gray text-sm mb-2">Ces documents aideront les partenaires a evaluer ton dossier plus rapidement.</p>
+    <div id="doc-requests-list"></div>
+    <div style="margin-top:1.5rem;display:flex;gap:0.5rem">
+      <button onclick="finishDocs()" id="btn-docs-done" class="btn btn-primary">Continuer</button>
+      <button onclick="finishDocs()" class="btn btn-outline" style="flex:0">Passer</button>
+    </div>
+  </div>
+
+  <!-- Step: Upload (fallback si pas de demande ciblee) -->
   <div id="step-upload" class="step card">
-    <h2 class="section-title">Documents (optionnel)</h2>
-    <p class="text-gray text-sm mb-2">Ajoute une pièce d'identité, preuve de revenus, etc. pour renforcer ton dossier.</p>
+    <h2 class="section-title">Autres documents (optionnel)</h2>
+    <p class="text-gray text-sm mb-2">Ajoute d'autres documents pour renforcer ton dossier.</p>
     <div class="upload-zone" onclick="document.getElementById('file-input').click()">
       <p style="margin-bottom:0.25rem">Clique pour ajouter des fichiers</p>
       <small>PDF, JPG, PNG — max 5 Mo</small>
-      <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none" onchange="uploadFiles(this)">
+      <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadFiles(this)">
     </div>
     <div id="file-list" style="margin-top:0.75rem"></div>
     <div id="upload-error" class="text-sm" style="color:var(--error);margin-top:0.5rem;display:none"></div>
@@ -446,6 +470,7 @@ function sendMessage() {
 }
 
 var uploadedFiles = [];
+var docRequests = [];
 
 function uploadFiles(input) {
   var files = input.files;
@@ -482,6 +507,81 @@ function uploadFiles(input) {
 }
 
 function finishChat() {
+  var btn = document.getElementById('btn-send');
+  if (btn) btn.disabled = true;
+  fetch('/api/chat/' + sessionId + '/document-requests', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'}
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    if (data.requests && data.requests.length > 0) {
+      docRequests = data.requests;
+      showDocRequests(data.requests);
+      switchStep('step-docs');
+    } else {
+      switchStep('step-upload');
+    }
+  }).catch(function () {
+    switchStep('step-upload');
+  });
+}
+
+function showDocRequests(requests) {
+  var list = document.getElementById('doc-requests-list');
+  if (!list) return;
+  list.innerHTML = '';
+  requests.forEach(function (req, idx) {
+    var card = document.createElement('div');
+    card.className = 'doc-req';
+    card.id = 'doc-req-' + idx;
+    var info = document.createElement('div');
+    info.className = 'info';
+    info.innerHTML = '<div class="label">' + escHtml(req.label) + '</div><div class="reason">' + escHtml(req.reason || '') + '</div>';
+    card.appendChild(info);
+    var actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.innerHTML = '<input type="file" id="doc-input-' + idx + '" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadDocReq(' + idx + ', this)">' +
+      '<button onclick="document.getElementById(\'doc-input-' + idx + '\').click()" class="btn btn-sm" style="background:var(--amber);color:white;border:none;border-radius:8px;padding:0.5rem 0.85rem;font-size:0.8rem;font-weight:600;cursor:pointer">Ajouter</button>' +
+      '<button onclick="skipDocReq(' + idx + ')" class="btn btn-sm" style="background:transparent;color:var(--gray-mid);border:1px solid var(--gray-light);border-radius:8px;padding:0.5rem 0.85rem;font-size:0.8rem;cursor:pointer">Je n\'ai pas</button>';
+    card.appendChild(actions);
+    list.appendChild(card);
+  });
+}
+
+function uploadDocReq(idx, input) {
+  if (!input.files.length) return;
+  var req = docRequests[idx];
+  var fd = new FormData();
+  fd.append('file', input.files[0]);
+  fd.append('doc_type', req.doc_type || 'unknown');
+  fetch('/api/documents/upload/' + sessionId, {
+    method: 'POST',
+    body: fd
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.status === 'ok') {
+      uploadedFiles.push(d.filename);
+      markDocDone(idx, 'Fichier ajout\u00e9 \u2713');
+    } else {
+      alert('Erreur: ' + (d.error || 'upload'));
+    }
+  }).catch(function () {
+    alert('Erreur lors de l\'upload');
+  });
+  input.value = '';
+}
+
+function skipDocReq(idx) {
+  markDocDone(idx, 'Non disponible');
+}
+
+function markDocDone(idx, status) {
+  var card = document.getElementById('doc-req-' + idx);
+  if (!card) return;
+  card.classList.add('done');
+  var actions = card.querySelector('.actions');
+  if (actions) actions.innerHTML = '<span class="status">' + status + '</span>';
+}
+
+function finishDocs() {
   switchStep('step-upload');
 }
 

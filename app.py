@@ -15,6 +15,7 @@ from credo_ai import (
     build_questionnaire,
     build_questionnaire_blocks,
     build_next_question,
+    build_document_requests,
     extract_document_fields,
     generate_code,
     build_comparison_report,
@@ -304,6 +305,23 @@ def submit_questionnaire(session_id):
         db_close(conn)
         print(f"[CREDO] DB error in submit_questionnaire: {e}", flush=True)
         return jsonify({"error": "Erreur lors de l'enregistrement"}), 500
+
+@app.route("/api/chat/<session_id>/document-requests", methods=["POST"])
+def document_requests(session_id):
+    try:
+        conn = get_db()
+        msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+        db_close(conn)
+        if not msgs:
+            return jsonify({"requests": []})
+        answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+        requests = build_document_requests(answers)
+        if requests:
+            return jsonify({"requests": requests})
+        return jsonify({"requests": []})
+    except Exception as e:
+        print(f"[CREDO] document_requests error: {e}", flush=True)
+        return jsonify({"requests": []})
 
 @app.route("/api/chat/<session_id>/analyze", methods=["POST"])
 def analyze(session_id):

@@ -616,6 +616,87 @@ def _fallback_question(answers: list[dict]) -> str:
     return "DONE"
 
 # ==============================================================
+# DOCUMENT REQUESTS — LLM decide quoi demander selon profil + partenaires
+# ==============================================================
+
+def build_document_requests(answers: list[dict]) -> list[dict]:
+    """LLM analyse le profil + les conditions partenaires et decide quels documents demander."""
+    try:
+        all_partners, all_products, all_rules = _get_all_partners()
+    except Exception:
+        return []
+    if not all_partners:
+        return []
+    profile = "\n".join(f"- {a.get('q','')}: {a.get('a','')}" for a in answers)
+    partners_ctx = "\n".join(
+        f"- {p['name']} ({p['type']}): docs requis: {', '.join(p['docs'] or [])}. Secteurs: {', '.join(p['sectors'] or [])}."
+        for p in all_partners[:10]
+    )
+    products_ctx = "\n".join(
+        f"- {pr['partner']} > {pr['product']}: collateral={'oui' if pr.get('collateral_required') else 'non'}. Req: {', '.join(pr['requirements'] or [])}."
+        for pr in all_products[:10]
+    )
+    prompt = f"""Tu es un conseiller credit UEMOA. Voici le profil du client et les conditions partenaires.
+
+PROFIL CLIENT:
+{profile}
+
+PARTENAIRES ET LEURS DOCUMENTS REQUIS:
+{partners_ctx}
+
+PRODUITS ET LEURS EXIGENCES:
+{products_ctx}
+
+Decide quels documents demander a CE client precis, en fonction de:
+1. Son secteur d'activite, son revenu, le montant demande
+2. Les documents requis par les partenaires compatibles avec son profil
+3. Ce qui est realiste pour son profil (pas de bulletin de salaire si informel)
+
+Retourne CE JSON:
+{{
+  "requests": [
+    {{
+      "doc_type": "business_photo",
+      "label": "Photo de ta boutique ou commerce",
+      "reason": "Pour les partenaires qui financent le commerce",
+      "optional": false
+    }},
+    {{
+      "doc_type": "id_card",
+      "label": "Ta piece d'identite",
+      "reason": "Document de base requis par tous les partenaires",
+      "optional": false
+    }}
+  ]
+}}
+
+Regles:
+- Max 3 documents. Prioritaires: ceux qui debloquent le plus de partenaires.
+- Si le profil est informel: photo_activite et id_card sont les plus utiles.
+- Si le profil a des garanties: photo garantie ou titre de propriete.
+- Si le profil a un RC/patente: business_license.
+- Chaque document doit avoir un label clair en francais, "tu".
+- optional: true si le document est utile mais pas bloquant."""
+
+    try:
+        resp = client.chat.completions.create(
+            model=SCORE_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.3,
+            max_tokens=600,
+        )
+        data = json.loads(resp.choices[0].message.content)
+        requests = data.get("requests", [])
+        if isinstance(requests, list) and len(requests) > 0:
+            _log(f"build_document_requests: {len(requests)} documents demandes")
+            return requests[:3]
+    except Exception as e:
+        _log(f"build_document_requests failed: {e}")
+    return []
+
+
+# ==============================================================
 # DOCUMENT EXTRACTION (Vision)
 # ==============================================================
 
