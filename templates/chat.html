@@ -301,6 +301,7 @@ var questions = [];
 var qIdx = 0;
 var loading = false;
 var projectDesc = '';
+var totalProgress = {done: 0, total: 8};
 
 document.addEventListener('DOMContentLoaded', function () {
   if (sessionId) {
@@ -381,10 +382,10 @@ function startSession() {
     switchStep('step-chat');
     questions = data.questions || [];
     qIdx = 0;
+    totalProgress.total = Math.max(questions.length || 6, 4);
     showMsg('ia', data.first_question);
-    if (questions.length > 0) {
-      updateProgress();
-    }
+    totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total);
+    updateProgress(totalProgress.done, totalProgress.total);
     document.getElementById('chat-input').focus();
   }).catch(function () {
     setLoading('btn-start', false);
@@ -392,12 +393,12 @@ function startSession() {
   });
 }
 
-function updateProgress() {
-  var total = questions.length || 1;
-  var done = Math.min(qIdx, total);
-  var pct = Math.round((done / total) * 100);
+function updateProgress(done, total) {
+  var t = total || questions.length || totalProgress.total || 1;
+  var d = done !== undefined ? done : Math.min(qIdx, t);
+  var pct = Math.round((d / t) * 100);
   document.getElementById('progress-fill').style.width = pct + '%';
-  document.getElementById('progress-label').textContent = 'Progrès : ' + done + '/' + total;
+  document.getElementById('progress-label').textContent = 'Progrès : ' + d + '/' + t;
 }
 
 function sendMessage() {
@@ -421,9 +422,11 @@ function sendMessage() {
       if (data.questions && data.questions.length > 0) {
         questions = data.questions;
         qIdx = 0;
-        updateProgress();
-        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; updateProgress(); }, 600);
+        totalProgress.total = Math.max(questions.length + totalProgress.done, totalProgress.total);
+        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total); updateProgress(totalProgress.done, totalProgress.total); }, 600);
       } else if (data.question) {
+        totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total);
+        updateProgress(totalProgress.done, totalProgress.total);
         setTimeout(function () { showMsg('ia', data.question); }, 600);
       } else if (data.done) {
         finishChat();
@@ -447,19 +450,21 @@ function sendMessage() {
         if (data.question === 'DONE') {
           finishChat();
         } else {
+          totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total);
+          updateProgress(totalProgress.done, totalProgress.total);
           setTimeout(function () { showMsg('ia', data.question); }, 400);
         }
       } else if (data.done) {
         finishChat();
       } else if (qIdx < questions.length) {
-        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; updateProgress(); }, 500);
+        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total); updateProgress(totalProgress.done, totalProgress.total); }, 500);
       } else {
         finishChat();
       }
     }).catch(function () {
       setLoading('btn-send', false);
       if (qIdx < questions.length) {
-        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; updateProgress(); }, 500);
+        setTimeout(function () { showMsg('ia', questions[qIdx]); qIdx++; totalProgress.done = Math.min(totalProgress.done + 1, totalProgress.total); updateProgress(totalProgress.done, totalProgress.total); }, 500);
       } else {
         finishChat();
       }

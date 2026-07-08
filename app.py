@@ -10,11 +10,12 @@ from flask import Flask, render_template, request, jsonify, session, send_from_d
 import psycopg2
 import psycopg2.extras
 
+from session_manager import SessionManager
 from credo_ai import (
     build_first_question,
     build_questionnaire,
     build_questionnaire_blocks,
-    build_next_question,
+    process_conversation_turn,
     build_document_requests,
     extract_document_fields,
     generate_code,
@@ -95,6 +96,13 @@ def init_db():
     conn.close()
 
 init_db()
+
+_session_managers: dict[str, SessionManager] = {}
+
+def _get_session_manager(session_id: str) -> SessionManager:
+    if session_id not in _session_managers:
+        _session_managers[session_id] = SessionManager(session_id)
+    return _session_managers[session_id]
 
 @app.route("/api/questions")
 def get_questions():
@@ -258,10 +266,11 @@ def chat_message(session_id):
     except Exception as e:
         db_close(conn)
         print(f"[CREDO] DB error fetching messages: {e}", flush=True)
-        return jsonify({"error": "Erreur lors de la récupération"}), 500
+        return jsonify({"error": "Erreur lors de la r\u00e9cup\u00e9ration"}), 500
     answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+    sm = _get_session_manager(session_id)
     try:
-        next_q = build_next_question(answers)
+        next_q = process_conversation_turn(answers, sm)
     except Exception:
         db_close(conn)
         return jsonify({"error": "Credo IA indisponible."}), 503

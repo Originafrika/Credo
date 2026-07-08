@@ -525,95 +525,70 @@ Genere un questionnaire en BLOCS. Chaque bloc = 2 a 4 questions sur UN theme.
 
 
 
-_last_questions: list[str] = []
+def process_conversation_turn(answers: list[dict], session_manager) -> str:
+    """Single LLM call per turn. Returns structured JSON with profile + next question.
+    Code handles termination based on stagnation detection in SessionManager."""
 
-_FALLBACK_QUESTIONS = [
-    "Quel est ton revenu mensuel moyen ?",
-    "Depuis combien de temps exerces-tu ?",
-    "Quel montant souhaites-tu emprunter ?",
-    "As-tu des garanties a proposer ?",
-    "As-tu deja eu un credit ?",
-    "As-tu une epargne ?",
-    "Quelle est la destination du pret ?",
-    "Peux-tu fournir des documents (piece d identite, justificatif de revenus) ?",
-]
+    hist = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in answers)
+    profile_str = json.dumps(session_manager.profile, ensure_ascii=False) if session_manager.profile else "{}"
 
-def build_next_question(answers: list[dict]) -> str:
-    """LLM decide: infos suffisantes (DONE), clarification, ou demande document."""
-    global _last_questions
-    context = _compact_history(answers)
-    hist = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in context)
+    prompt = f"""Tu es un agent de credit intelligent pour l'UEMOA.
 
-    prompt = f"""Tu es un conseiller credit. Le client a repondu:
+HISTORIQUE DE LA CONVERSATION:
 {hist}
 
-Il te faut au moins: activite, revenu, montant, duree, garantie.
-Si toutes ces infos sont presentes (memes partielles), reponds: DONE
-Sinon, pose UNE question courte. Max 12 mots. Naturel, en "tu"."""
+PROFIL EXISTANT:
+{profile_str}
+
+Retourne un JSON avec ces champs obligatoires:
+1. "profile": objet contenant TOUTES les informations connues extraites de la conversation (mets a jour depuis le profil existant)
+2. "updated_fields": liste des noms de champs qui ont CHANGE ou ete AJOUTES dans ce tour-ci
+3. "assessment": "sufficient" si tu as assez d'infos pour evaluer la demande, sinon "needs_more"
+4. "reason": explication courte de pourquoi tu as besoin de plus d'infos, ou pourquoi c'est suffisant
+5. "next_question": une question courte et naturelle en francais pour obtenir l'info suivante, ou "DONE" si tu as termine
+
+Regles:
+- Noms de champs explicites en francais (ex: "revenu_mensuel", "montant_pret", "activite", "garantie", "secteur_activite", "duree_remboursement", "epargne", "age")
+- null si l'info n'est pas encore connue
+- Ne pas inventer des infos
+- updated_fields doit etre PRECIS: seulement les champs qui ont recu une nouvelle valeur ce tour
+- Si updated_fields est vide, le systeme arretra la conversation
+- next_question: max 15 mots, tutoiement, une seule question
+- Garde l'historique en tete pour ne pas poser deux fois la meme question"""
 
     try:
         resp = client.chat.completions.create(
             model=SCORE_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.5,
-            max_tokens=80,
+            response_format={"type": "json_object"},
+            temperature=0.3,
+            max_tokens=600,
         )
-        q = resp.choices[0].message.content.strip().strip('"').strip("'")
+        result = json.loads(resp.choices[0].message.content)
+        turn_info = session_manager.record_turn(result)
+        _log(f"turn {session_manager.turn_count}: updated={turn_info['updated']}, stagnation={turn_info['stagnation_count']}")
+
+        should_stop, reason = session_manager.should_stop()
+        if should_stop:
+            _log(f"process_conversation_turn: stopping ({reason})")
+            return "DONE"
+
+        if result.get("assessment") == "sufficient" and not turn_info["updated"]:
+            return "DONE"
+
+        next_q = result.get("next_question", "").strip()
+        if next_q.upper() == "DONE":
+            return "DONE"
+        if next_q:
+            return next_q
+
+        return "Peux-tu en dire plus ?"
+
     except Exception as e:
-        _log(f"build_next_question Groq failed: {e}")
-        return _fallback_question(answers)
-
-    if "DONE" in q.upper() and len(q) < 10:
-        _last_questions.clear()
-        return "DONE"
-
-    # Loop detection: same question asked 2+ times → force DONE
-    if len(_last_questions) >= 2 and all(q == prev for prev in _last_questions[-2:]):
-        _last_questions.clear()
-        return "DONE"
-    _last_questions.append(q)
-    if len(_last_questions) > 10:
-        _last_questions.pop(0)
-
-    return q if q else "Peux-tu preciser ?"
-
-
-def _fallback_question(answers: list[dict]) -> str:
-    """Fallback quand Groq est down: pose les questions manquantes une par une."""
-    asked_topics = set()
-    for a in answers:
-        q = (a.get("q") or "").lower()
-        r = (a.get("a") or "").lower()
-        asked_topics.add(q[:40])
-        if "gagnes" in q or "revenu" in q:
-            asked_topics.add("revenu")
-        if "combien" in q or "montant" in q or "emprunter" in q:
-            asked_topics.add("montant")
-        if "temps" in q or "depuis" in q:
-            asked_topics.add("duree")
-        if "garantie" in q:
-            asked_topics.add("garantie")
-        if "credit" in q or "deja" in q:
-            asked_topics.add("credit")
-        if "epargne" in q:
-            asked_topics.add("epargne")
-        if "destination" in q or "quoi" in q:
-            asked_topics.add("destination")
-    if "revenu" not in asked_topics:
-        return "Quel est ton revenu mensuel moyen ?"
-    if "montant" not in asked_topics:
-        return "Quel montant souhaites-tu emprunter ?"
-    if "duree" not in asked_topics:
-        return "Depuis combien de temps exerces-tu ?"
-    if "garantie" not in asked_topics:
-        return "As-tu des garanties a proposer ?"
-    if "credit" not in asked_topics:
-        return "As-tu deja eu un credit ?"
-    if "epargne" not in asked_topics:
-        return "As-tu une epargne ?"
-    if "destination" not in asked_topics:
-        return "Quelle est la destination du pret ?"
-    return "DONE"
+        _log(f"process_conversation_turn LLM call failed: {e}")
+        if session_manager.profile:
+            return "DONE"
+        return "Peux-tu reformuler ?"
 
 # ==============================================================
 # DOCUMENT REQUESTS — LLM decide quoi demander selon profil + partenaires
