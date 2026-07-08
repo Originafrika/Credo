@@ -157,6 +157,21 @@ def new_chat():
 def chat_session(session_id):
     return render_template("chat.html", session_id=session_id)
 
+@app.route("/api/chat/<session_id>/resume")
+def resume_session(session_id):
+    conn = get_db()
+    s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+    if not s:
+        db_close(conn)
+        return jsonify({"error": "Session invalide"}), 404
+    last = db_fetchone(conn, "SELECT question FROM messages WHERE session_id = %s AND role = 'ia' ORDER BY id DESC LIMIT 1", (session_id,))
+    count = db_fetchone(conn, "SELECT COUNT(*) AS c FROM messages WHERE session_id = %s AND role = 'user'", (session_id,))
+    db_close(conn)
+    return jsonify({
+        "question": last["question"] if last else build_first_question(),
+        "done": False,
+    })
+
 @app.route("/api/session/start", methods=["POST"])
 def start_session():
     data = request.json
