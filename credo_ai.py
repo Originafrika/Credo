@@ -501,53 +501,47 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict]]:
     dsn = os.environ.get("NEON_DSN", "") or NEON_DSN
     if not dsn:
         return [], []
-    try:
-        conn = psycopg2.connect(dsn)
-        cur = conn.cursor()
+    conn = psycopg2.connect(dsn)
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
+           FROM partners
+           WHERE countries @> ARRAY[%s]::TEXT[]
+           ORDER BY name ASC""",
+        (country,)
+    )
+    def _to_num(v):
+        return float(v) if v is not None else None
+
+    partners = []
+    partner_ids = []
+    for r in cur.fetchall():
+        partners.append({
+            "name": r[0], "type": r[1], "min_amount": r[2], "max_amount": r[3],
+            "rate": _to_num(r[4]), "sectors": r[5], "docs": r[6], "description": r[7],
+            "base_rate": _to_num(r[8]), "max_rate": _to_num(r[9]),
+        })
+        partner_ids.append(r[10])
+
+    products = []
+    if partner_ids:
         cur.execute(
-            """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
-               FROM partners
-               WHERE countries @> ARRAY[%s]::TEXT[]
-               ORDER BY name ASC""",
-            (country,)
+            """SELECT p.name AS partner_name, pr.name, pr.min_amount, pr.max_amount,
+                      pr.min_duration_months, pr.max_duration_months, pr.annual_rate,
+                      pr.collateral_required, pr.requirements, pr.description
+               FROM products pr JOIN partners p ON p.id = pr.partner_id
+               WHERE pr.partner_id = ANY(%s)
+               ORDER BY pr.annual_rate ASC""",
+            (partner_ids,)
         )
-        def _to_num(v):
-            return float(v) if v is not None else None
-
-        partners = []
-        partner_ids = []
         for r in cur.fetchall():
-            partners.append({
-                "name": r[0], "type": r[1], "min_amount": r[2], "max_amount": r[3],
-                "rate": _to_num(r[4]), "sectors": r[5], "docs": r[6], "description": r[7],
-                "base_rate": _to_num(r[8]), "max_rate": _to_num(r[9]),
+            products.append({
+                "partner": r[0], "product": r[1], "min_amount": r[2], "max_amount": r[3],
+                "min_duration": r[4], "max_duration": r[5], "annual_rate": _to_num(r[6]),
+                "collateral_required": r[7], "requirements": r[8], "description": r[9],
             })
-            partner_ids.append(r[10])
-
-        products = []
-        if partner_ids:
-            cur.execute(
-                """SELECT p.name AS partner_name, pr.name, pr.min_amount, pr.max_amount,
-                          pr.min_duration_months, pr.max_duration_months, pr.annual_rate,
-                          pr.collateral_required, pr.requirements, pr.description
-                   FROM products pr JOIN partners p ON p.id = pr.partner_id
-                   WHERE pr.partner_id = ANY(%s)
-                   ORDER BY pr.annual_rate ASC""",
-                (partner_ids,)
-            )
-            for r in cur.fetchall():
-                products.append({
-                    "partner": r[0], "product": r[1], "min_amount": r[2], "max_amount": r[3],
-                    "min_duration": r[4], "max_duration": r[5], "annual_rate": _to_num(r[6]),
-                    "collateral_required": r[7], "requirements": r[8], "description": r[9],
-                })
-        conn.close()
-        return partners, products
-    except Exception as e:
-        msg = f"_get_all_partners failed: {e}"
-        _log(msg)
-        import traceback; _log(traceback.format_exc()[:500])
-        return [], []
+    conn.close()
+    return partners, products
 
 
 def _extract_sector(answers: list[dict]) -> str:
