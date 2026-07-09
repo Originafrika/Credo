@@ -401,8 +401,10 @@ Retourne un JSON avec ces champs obligatoires:
 5. "next_question": une question courte et naturelle en francais pour obtenir l'info suivante, ou "DONE" si tu as termine
 
 Regles:
-- Noms de champs explicites en francais (ex: "revenu_mensuel", "montant_pret", "activite", "garantie", "secteur_activite", "duree_remboursement", "epargne")
+- Noms de champs explicites en francais (ex: "revenu_mensuel", "montant_pret", "profession", "garantie", "secteur_activite", "duree_remboursement", "epargne")
+- secteur_activite = le SECTEUR DU PRET (ce que l'argent va financer), PAS la profession de l'emprunteur. Ex: voyageur qui code → secteur_activite="voyage", profession="codeur".
 - secteur_activite: STRICTEMENT l'un de ces choix: commerce, agriculture, service, artisanat, industrie, tech, particulier, consommation, voyage, tourisme, sante, education, loisir, habitat. Si aucun ne correspond, mets "particulier".
+- profession = le metier de l'utilisateur (champ libre, pas de contrainte). Ne JAMAIS confondre avec secteur_activite.
 - null si l'info n'est pas encore connue
 - Ne pas inventer des infos
 - updated_fields doit etre PRECIS: seulement les champs qui ont recu une nouvelle valeur ce tour
@@ -412,9 +414,10 @@ Regles:
 
 Guide pour les questions (IMPORTANT):
 - Base-toi sur les PARTENAIRES et PRODUITS ci-dessus pour demander les infos vraiment pertinentes au matching
-- Demande ce qui permet de MATCHER: montant souhaite, duree, revenu, secteur exact, garanties, RC/patente
-- Pour un particulier/consommation: demande la profession, le revenu, le montant, la duree, et l'usage du pret
-- N'invente PAS de champs non pertinents (age, equilibre financier, etc.) — seul le revenu compte
+- Demande ce qui permet de MATCHER: montant souhaite, duree, revenu, secteur_activite (usage du pret), profession, garanties, RC/patente
+- Pour un pret conso/voyage: secteur_activite = voyage, meme si l'utilisateur est codeur/commercant/etc. La profession est un champ SEPARE.
+- Pour un pret voyage: apres avoir obtenu montant, revenu, duree, passe aux GARANTIES et DOCUMENTS — ne creuse PAS dans les details du travail du client
+- N'invente PAS de champs non pertinents (age, equilibre financier, experience_professionnelle_detaillee, etc.)
 - Si le client n'a pas compris la question precedente, reformule avec des termes plus simples"""
 
     try:
