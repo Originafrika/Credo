@@ -37,7 +37,7 @@ def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> tu
         cur.execute(
             """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
                FROM partners
-               WHERE active = true
+               WHERE (active = true OR active IS NULL)
                  AND countries @> ARRAY[%s]::TEXT[]
                  AND min_amount <= %s
                  AND max_amount >= %s
@@ -292,12 +292,20 @@ Retourne un JSON:
 3. "next_question": reformulation naturelle de "{criterion}" en une question courte, tutoiement, max 15 mots
 
 Regles:
-- Noms de champs: {"montant_pret", "revenu_mensuel", "secteur_activite", "profession", "duree_remboursement", "garantie", "epargne", "credit_history", "RC_ou_patente"}
-- secteur_activite = le SECTEUR DU PRET, pas la profession. STRICTEMENT parmi: commerce, agriculture, service, artisanat, industrie, tech, particulier, consommation, voyage, tourisme, sante, education, loisir, habitat.
+- Noms de champs autorisés: montant_pret, revenu_mensuel, secteur_activite, profession, duree_remboursement, garantie, epargne, credit_history, RC_ou_patente
+- secteur_activite = le SECTEUR DU PRET. STRICTEMENT parmi: commerce, agriculture, service, artisanat, industrie, tech, particulier, consommation, voyage, tourisme, sante, education, loisir, habitat.
 - profession = le metier (champ libre)
 - null si pas encore connu
-- updated_fields PRECIS: seulement les champs qui ont recu une nouvelle valeur
-- Si updated_fields vide, le système considère la réponse insuffisante"""
+- updated_fields PRECIS: seulement les champs qui ont recu une nouvelle valeur ce tour
+- Si updated_fields vide, la réponse est jugée insuffisante
+
+Pour la question: reformule le thème "{criterion}" de façon DIRECTE.
+Exemples CORRECTS:
+- "montant_pret" → "Quel montant souhaites-tu emprunter ?" (PAS "quels documents")
+- "revenu_mensuel" → "Quel est ton revenu mensuel ?" (PAS "quels documents justifient")
+- "garantie" → "As-tu une garantie à proposer ?" (PAS "quels documents de garantie")
+- "duree_remboursement" → "Sur combien de mois veux-tu rembourser ?"
+Ne JAMAIS demander de documents. Les documents sont gérés séparément."""
 
     try:
         resp = client.chat.completions.create(
@@ -470,7 +478,7 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict], list
         cur.execute(
             """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
                FROM partners
-               WHERE active = true
+               WHERE (active = true OR active IS NULL)
                  AND countries @> ARRAY[%s]::TEXT[]
                ORDER BY name ASC""",
             (country,)
