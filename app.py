@@ -6,12 +6,19 @@ import urllib.request
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from io import BytesIO
 
+import logging
+import sentry_sdk
 from flask import Flask, render_template, request, jsonify, session
+from sentry_sdk.integrations.flask import FlaskIntegration
 import psycopg2
 import psycopg2.extras
 
 from session_manager import SessionManager
+from admin import admin
+from report_pdf import generate_pdf
+from payment import create_transaction, get_payment_url, verify_webhook, handle_webhook_event
 from credo_ai import (
     build_first_question,
     process_conversation_turn,
@@ -25,6 +32,25 @@ from credo_ai import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "credo-dev-2026")
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
+
+dsn = os.environ.get("SENTRY_DSN")
+if dsn:
+    sentry_sdk.init(
+        dsn=dsn,
+        integrations=[FlaskIntegration()],
+        traces_sample_rate=0.2,
+        send_default_pii=False,
+    )
+    print("[CREDO] Sentry initialisé", flush=True)
+else:
+    print("[CREDO] SENTRY_DSN non défini — Sentry désactivé", flush=True)
+
+logger = logging.getLogger("credo")
+logger.setLevel(logging.INFO)
+if not logger.hasHandlers():
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] credo: %(message)s"))
+    logger.addHandler(_handler)
 
 @app.after_request
 def security_headers(resp):
@@ -41,6 +67,7 @@ class _JsonEncoder(json.JSONEncoder):
             return float(o)
         return super().default(o)
 app.json_encoder = _JsonEncoder
+app.register_blueprint(admin)
 
 def _blob_upload(file_bytes: bytes, filename: str, content_type: str) -> str | None:
     token = os.environ.get("BLOB_READ_WRITE_TOKEN")
@@ -95,15 +122,17 @@ def init_db():
         return
     conn = get_db()
     for sql in [
-        "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, phone TEXT, plan TEXT DEFAULT '5000', status TEXT DEFAULT 'payment_wait', code TEXT, payment_ref TEXT, payment_verified INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), completed_at TEXT, questionnaire TEXT, question_idx INTEGER DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, phone TEXT, plan TEXT DEFAULT '5000', status TEXT DEFAULT 'payment_wait', code TEXT, payment_ref TEXT, payment_verified INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), completed_at TEXT, questionnaire TEXT, question_idx INTEGER DEFAULT 0, state TEXT DEFAULT 'intake')",
         "CREATE TABLE IF NOT EXISTS messages (id SERIAL PRIMARY KEY, session_id TEXT, role TEXT, question TEXT, answer TEXT, created_at TEXT DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS documents (id SERIAL PRIMARY KEY, session_id TEXT, doc_type TEXT, storage_url TEXT, extracted_json TEXT, created_at TEXT DEFAULT NOW())",
         "CREATE TABLE IF NOT EXISTS results (id SERIAL PRIMARY KEY, session_id TEXT UNIQUE, score INTEGER, risk TEXT, max_amount INTEGER, partners TEXT, missing_docs TEXT, tips TEXT, code TEXT UNIQUE, loan_amount INTEGER, analysis TEXT, created_at TEXT DEFAULT NOW())",
+        "CREATE TABLE IF NOT EXISTS payments (id SERIAL PRIMARY KEY, session_id TEXT, provider TEXT DEFAULT 'fedapay', amount INTEGER, status TEXT DEFAULT 'pending', provider_ref TEXT, provider_data TEXT, created_at TEXT DEFAULT NOW())",
     ]:
         db_execute(conn, sql)
     try:
         db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS questionnaire TEXT")
         db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS question_idx INTEGER DEFAULT 0")
+        db_execute(conn, "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS state TEXT DEFAULT 'intake'")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS max_amount INTEGER DEFAULT 0")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS missing_docs TEXT")
         db_execute(conn, "ALTER TABLE results ADD COLUMN IF NOT EXISTS tips TEXT")
@@ -128,7 +157,14 @@ def _get_session_manager(session_id: str) -> SessionManager:
             _session_managers.pop(k, None)
             _session_manager_timestamps.pop(k, None)
     if session_id not in _session_managers:
-        _session_managers[session_id] = SessionManager(session_id)
+        try:
+            conn = get_db()
+            s = db_fetchone(conn, "SELECT state FROM sessions WHERE id = %s", (session_id,))
+            state = s["state"] if s and s.get("state") else "intake"
+            conn.close()
+        except Exception:
+            state = "intake"
+        _session_managers[session_id] = SessionManager(session_id, initial_state=state)
     _session_manager_timestamps[session_id] = now
     return _session_managers[session_id]
 
@@ -238,9 +274,8 @@ def start_session():
         print(f"[CREDO] DB connection error: {e}", flush=True)
         return jsonify({"error": "Service indisponible"}), 503
     try:
-        db_execute(conn, "INSERT INTO sessions (id, phone, plan) VALUES (%s, %s, %s)", (session_id, cleaned, plan))
+        db_execute(conn, "INSERT INTO sessions (id, phone, plan, state) VALUES (%s, %s, %s, 'intake')", (session_id, cleaned, plan))
         first_q = build_first_question()
-        db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, first_q))
         db_close(conn)
         return jsonify({"session_id": session_id, "first_question": first_q})
     except Exception as e:
@@ -264,9 +299,15 @@ def chat_message(session_id):
         if not s:
             db_close(conn)
             return jsonify({"error": "Session invalide"}), 404
+        sm = _get_session_manager(session_id)
+        if sm.state not in ("intake", "questions"):
+            db_close(conn)
+            return jsonify({"error": f"Action non autorisee (etat: {sm.state})"}), 403
         last = db_fetchone(conn, "SELECT question FROM messages WHERE session_id = %s AND role = 'ia' ORDER BY id DESC LIMIT 1", (session_id,))
         last_q = last["question"] if last else "Question"
         db_execute(conn, "INSERT INTO messages (session_id, role, question, answer) VALUES (%s, 'user', %s, %s)", (session_id, last_q, answer))
+        if sm.state == "intake":
+            sm.state_machine.transition_to("questions")
     except Exception as e:
         db_close(conn)
         print(f"[CREDO] DB error in chat_message: {e}", flush=True)
@@ -286,10 +327,14 @@ def chat_message(session_id):
         db_close(conn)
         return jsonify({"error": "Credo IA indisponible."}), 503
     if next_q == "DONE":
+        if sm.state == "questions":
+            sm.state_machine.transition_to("documents")
+        db_execute(conn, "UPDATE sessions SET state = %s WHERE id = %s", (sm.state, session_id))
         db_close(conn)
-        return jsonify({"done": True})
+        return jsonify({"done": True, "next_state": sm.state})
     try:
         db_execute(conn, "INSERT INTO messages (session_id, role, question) VALUES (%s, 'ia', %s)", (session_id, next_q))
+        db_execute(conn, "UPDATE sessions SET state = %s WHERE id = %s", (sm.state, session_id))
     except Exception as e:
         db_close(conn)
         print(f"[CREDO] DB error inserting next question: {e}", flush=True)
@@ -299,6 +344,9 @@ def chat_message(session_id):
 
 @app.route("/api/chat/<session_id>/document-requests", methods=["POST"])
 def document_requests(session_id):
+    sm = _get_session_manager(session_id)
+    if sm.state not in ("documents",):
+        return jsonify({"requests": [], "error": f"Action non autorisee (etat: {sm.state})"}), 403
     try:
         conn = get_db()
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
@@ -316,12 +364,16 @@ def document_requests(session_id):
 
 @app.route("/api/chat/<session_id>/analyze", methods=["POST"])
 def analyze(session_id):
+    sm = _get_session_manager(session_id)
+    if sm.state not in ("documents", "scoring", "paywall"):
+        return jsonify({"error": f"Action non autorisee (etat: {sm.state})"}), 403
     try:
         conn = get_db()
         s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
         if not s:
             db_close(conn)
             return jsonify({"error": "Session invalide"}), 404
+        sm.state_machine.transition_to("scoring")
         msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
         if not msgs:
             db_close(conn)
@@ -367,11 +419,18 @@ def analyze(session_id):
         plan = s["plan"]
         if plan == "5000":
             code = generate_code()
+        paywall_enabled = bool(os.environ.get("FEDAPAY_API_KEY", ""))
+        if paywall_enabled and plan == "5000":
+            sm.state_machine.transition_to("paywall")
+            next_state = "paywall"
+        else:
+            sm.state_machine.transition_to("report")
+            next_state = "report"
         db_execute(conn,
             "INSERT INTO results (session_id, score, risk, max_amount, partners, missing_docs, tips, code, analysis, report_data) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_id) DO UPDATE SET score=excluded.score, risk=excluded.risk, max_amount=excluded.max_amount, partners=excluded.partners, missing_docs=excluded.missing_docs, tips=excluded.tips, code=excluded.code, analysis=excluded.analysis, report_data=excluded.report_data",
             (session_id, report["score"], report.get("risk", "N/A"), report.get("max_amount", 0), json.dumps(report.get("top_recommendations", []) if plan == "5000" else report.get("top_recommendations", [])[:1]), json.dumps(report.get("missing_documents", []) if plan == "5000" else []), json.dumps(report.get("improvement_tips", []) if plan == "5000" else []), code, report.get("analysis", "") if plan == "5000" else "", json.dumps(report))
         )
-        db_execute(conn, "UPDATE sessions SET status = 'completed', code = %s, completed_at = NOW() WHERE id = %s", (code, session_id))
+        db_execute(conn, "UPDATE sessions SET status = 'completed', state = %s, code = %s, completed_at = NOW() WHERE id = %s", (next_state, code, session_id))
         db_close(conn)
         resp = {
             "score": report["score"],
@@ -533,8 +592,53 @@ def view_report(session_id):
         print(f"[CREDO] DB error in view_report: {e}", flush=True)
         return render_template("error.html", message="Erreur lors du chargement du rapport")
 
+@app.route("/api/report/<session_id>/pdf")
+def download_pdf(session_id):
+    try:
+        conn = get_db()
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        if not s:
+            conn.close()
+            return jsonify({"error": "Session invalide"}), 404
+        plan = s.get("plan", "2500")
+        cached = db_fetchone(conn, "SELECT report_data FROM results WHERE session_id = %s AND report_data IS NOT NULL", (session_id,))
+        if cached and cached["report_data"]:
+            report = json.loads(cached["report_data"])
+        else:
+            msgs = db_execute(conn, "SELECT question, answer FROM messages WHERE session_id = %s AND role = 'user' ORDER BY id", (session_id,))
+            docs = db_execute(conn, "SELECT doc_type, storage_url, extracted_json FROM documents WHERE session_id = %s", (session_id,))
+            answers = [{"q": m["question"], "a": m["answer"]} for m in msgs]
+            document_extractions = []
+            for d in docs:
+                if d.get("extracted_json"):
+                    try:
+                        document_extractions.append(json.loads(d["extracted_json"]))
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            report = build_comparison_report(answers, document_extractions)
+        conn.close()
+
+        package = "complet" if plan == "5000" else "simple"
+        pdf_bytes = generate_pdf(report, package)
+        if not pdf_bytes:
+            return jsonify({"error": "Erreur lors de la génération du PDF"}), 500
+
+        from flask import send_file
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"credo-rapport-{session_id}.pdf",
+        )
+    except Exception as e:
+        print(f"[CREDO] PDF download error: {e}", flush=True)
+        return jsonify({"error": "Erreur lors du téléchargement"}), 500
+
 @app.route("/api/documents/upload/<session_id>", methods=["POST"])
 def upload_document(session_id):
+    sm = _get_session_manager(session_id)
+    if sm.state not in ("documents", "questions"):
+        return jsonify({"error": f"Action non autorisee (etat: {sm.state})"}), 403
     try:
         if "file" not in request.files:
             return jsonify({"error": "Aucun fichier"}), 400
@@ -558,11 +662,84 @@ def upload_document(session_id):
             return jsonify({"error": "Erreur lors du stockage"}), 500
         conn = get_db()
         db_execute(conn, "INSERT INTO documents (session_id, doc_type, storage_url) VALUES (%s, %s, %s)", (session_id, doc_type, blob_url))
+        if sm.state == "questions":
+            sm.state_machine.transition_to("documents")
+        db_execute(conn, "UPDATE sessions SET state = %s WHERE id = %s", (sm.state, session_id))
         db_close(conn)
         return jsonify({"status": "ok", "filename": blob_url})
     except Exception as e:
         print(f"[CREDO] upload error: {e}", flush=True)
         return jsonify({"error": "Erreur lors de l'upload"}), 500
+
+@app.route("/api/payment/init/<session_id>", methods=["POST"])
+def payment_init(session_id):
+    sm = _get_session_manager(session_id)
+    if sm.state != "paywall":
+        return jsonify({"error": f"Action non autorisée (état: {sm.state})"}), 403
+    if not os.environ.get("FEDAPAY_API_KEY", ""):
+        sm.mark_paid()
+        try:
+            conn = get_db()
+            db_execute(conn, "UPDATE sessions SET status = 'completed', state = 'report', payment_verified = 1 WHERE id = %s", (session_id,))
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({"payment_url": None, "bypass": True, "message": "Mode test — paiement simulé"})
+    try:
+        conn = get_db()
+        s = db_fetchone(conn, "SELECT * FROM sessions WHERE id = %s", (session_id,))
+        if not s:
+            conn.close()
+            return jsonify({"error": "Session invalide"}), 404
+        phone = s["phone"]
+        plan = s["plan"]
+        callback_url = request.url_root.rstrip("/") + "/api/webhook/fedapay"
+        tx = create_transaction(session_id, phone, plan, callback_url)
+        if not tx:
+            conn.close()
+            return jsonify({"error": "Erreur lors de l'initialisation du paiement"}), 500
+        tx_id = tx.get("id")
+        tx_ref = tx.get("reference", "")
+        db_execute(conn, "INSERT INTO payments (session_id, provider, amount, status, provider_ref, provider_data) VALUES (%s, 'fedapay', %s, 'pending', %s, %s)",
+                   (session_id, 2500 if plan == "2500" else 5000, tx_ref, json.dumps(tx)))
+        db_execute(conn, "UPDATE sessions SET payment_ref = %s WHERE id = %s", (tx_ref, session_id))
+        conn.close()
+        payment_url = get_payment_url(tx_id)
+        return jsonify({"payment_url": payment_url, "reference": tx_ref})
+    except Exception as e:
+        print(f"[CREDO] payment_init error: {e}", flush=True)
+        return jsonify({"error": "Erreur lors de l'initialisation"}), 500
+
+@app.route("/api/webhook/fedapay", methods=["POST"])
+def webhook_fedapay():
+    payload = request.get_data()
+    sig = request.headers.get("X-FEDAPAY-SIGNATURE", "")
+    event = verify_webhook(payload, sig)
+    if not event:
+        return jsonify({"error": "Invalid signature"}), 400
+    result = handle_webhook_event(event)
+    if not result:
+        return jsonify({"received": True}), 200
+    status = result.get("status")
+    session_id = result.get("session_id")
+    if not session_id:
+        return jsonify({"received": True}), 200
+    try:
+        conn = get_db()
+        if status == "approved":
+            sm = _get_session_manager(session_id)
+            sm.mark_paid()
+            db_execute(conn, "UPDATE sessions SET status = 'completed', state = 'report', payment_verified = 1, payment_ref = %s WHERE id = %s",
+                       (result.get("reference", ""), session_id))
+            db_execute(conn, "UPDATE payments SET status = 'approved' WHERE session_id = %s AND provider = 'fedapay'",
+                       (session_id,))
+        elif status == "failed":
+            db_execute(conn, "UPDATE payments SET status = 'failed' WHERE session_id = %s AND provider = 'fedapay'",
+                       (session_id,))
+        conn.close()
+    except Exception as e:
+        print(f"[CREDO] webhook handler error: {e}", flush=True)
+    return jsonify({"received": True}), 200
 
 @app.route("/verify/<code>")
 def verify_code(code):

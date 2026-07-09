@@ -7,6 +7,7 @@ from datetime import datetime
 
 from groq import Groq
 import psycopg2
+from rules import next_criterion, default_question, compute_score
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""), timeout=30)
 
@@ -36,7 +37,8 @@ def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> tu
         cur.execute(
             """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
                FROM partners
-               WHERE countries @> ARRAY[%s]::TEXT[]
+               WHERE active = true
+                 AND countries @> ARRAY[%s]::TEXT[]
                  AND min_amount <= %s
                  AND max_amount >= %s
                ORDER BY
@@ -65,6 +67,7 @@ def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> tu
                    FROM products pr JOIN partners p ON p.id = pr.partner_id
                    WHERE pr.partner_id = ANY(%s)
                      AND pr.max_amount >= %s
+                     AND pr.superseded_at IS NULL
                    ORDER BY pr.annual_rate ASC""",
                 (partner_ids, amount)
             )
@@ -206,121 +209,24 @@ def score_from_answers(answers: list[dict], document_extractions: list[dict] = N
         if "decris" in (a.get("q") or "").lower()[:8]:
             description = a.get("a", "")
 
-    monthly_income = _estimate_monthly_revenue(answers)
-    amount_wanted = _extract_amount_wanted(description, answers)
-    duration_months, duration_unit = _extract_activity_duration(answers)
-    credit_history = _extract_credit_history(answers)
-    has_savings = _extract_savings(answers)
+    profile = {
+        "revenu_mensuel": _estimate_monthly_revenue(answers),
+        "montant_pret": _extract_amount_wanted(description, answers),
+        "garantie": _extract_has_collateral(answers),
+        "credit_history": _extract_credit_history(answers),
+        "epargne": _extract_savings(answers),
+        "RC_ou_patente": _extract_business_registration(answers),
+    }
+    dur_months, _ = _extract_activity_duration(answers)
+    profile["duree_activite"] = dur_months
 
-    has_collateral = False
-    for a in answers:
-        r = (a.get("a") or "").lower()
-        if "garantie" in (a.get("q") or "").lower() and "oui" in r:
-            has_collateral = True
-        if "garantie" in r and ("terrain" in r or "boutique" in r or "maison" in r or "vehicule" in r or "oui" in r or "iphone" in r):
-            has_collateral = True
-
-    business_reg = _extract_business_registration(answers)
     sector = _extract_sector(answers)
+    profile["secteur_activite"] = sector
 
-    realistic_max = _compute_realistic_max(monthly_income, has_collateral, amount_wanted)
+    result = compute_score(profile)
 
-    # Risk preliminaire multi-facteurs
-    risk = "Eleve"
-    if monthly_income >= 200000:
-        risk = "Moyen"
-    if monthly_income >= 500000 and has_collateral:
-        risk = "Faible"
-    if monthly_income >= 1000000:
-        risk = "Faible"
-    if credit_history == "bon" and risk == "Moyen":
-        risk = "Faible"
-    if duration_months >= 12:
-        if risk == "Eleve":
-            risk = "Moyen"
-
-    prompt = _build_groq_prompt(answers, monthly_income, amount_wanted, has_collateral,
-                                realistic_max, risk, sector, duration_months,
-                                credit_history, has_savings, business_reg,
-                                document_extractions=document_extractions)
-    resp = client.chat.completions.create(
-        model=SCORE_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        temperature=0.1,
-        max_tokens=1024,
-    )
-    data = json.loads(resp.choices[0].message.content)
-    data["model"] = SCORE_MODEL
-    data["tokens_used"] = getattr(resp.usage, "total_tokens", 0)
-    data["max_amount"] = realistic_max
-
-    _log(f"Groq score OK: {data.get('score')}, risk: {data.get('risk')}, tokens: {data['tokens_used']}")
-    return data
-
-
-def _build_groq_prompt(answers: list[dict], income: int, wanted: int, collateral: bool,
-                       realistic_max: int, risk_label: str, sector: str,
-                       duration_months: int, credit_history: str,
-                       has_savings: bool, business_reg: bool,
-                       document_extractions: list[dict] = None) -> str:
-    compacted = _compact_history(answers)
-    qa = "\n".join(f"- {a.get('q', '')}: {a.get('a', '')}" for a in compacted)
-
-    ratio = round((wanted / income) * 100) if income > 0 else 0
-
-    docs_ctx = ""
-    if document_extractions:
-        doc_lines = []
-        for d in document_extractions:
-            relevant = {k: v for k, v in d.items() if k != "error" and not k.startswith("_")}
-            if relevant:
-                doc_lines.append(json.dumps(relevant, ensure_ascii=False))
-        if doc_lines:
-            docs_ctx = "\nDocuments fournis par le client:\n" + "\n".join(f"- {l}" for l in doc_lines) + "\n\n"
-
-    return f"""Tu es un analyste de credit pour le marche UEMOA (Afrique de l'Ouest). Analyse CE profil precis.
-
-Profil:
-{qa}
-
-Revenu mensuel: {income} FCFA
-Montant demande: {wanted} FCFA
-Ratio demande/revenu: {ratio}%
-Secteur: {sector}
-Duree activite: {duration_months} mois
-Collateral: {"oui" if collateral else "non"}
-RC/Patente: {"oui" if business_reg else "non"}
-Historique credit: {credit_history}
-Epargne: {"oui" if has_savings else "non"}
-Montant realiste max: {realistic_max} FCFA
-Risque preliminaire: {risk_label}
-{docs_ctx}REGLES UEMOA:
-- Le marche informel represente ~80% de l'economie: absence de bulletin de salaire n'est pas un risque
-- Sans collateral: pret max = 6x revenu mensuel. Avec collateral: jusqu'a 24x
-- La mensualite ne doit pas exceder 40% du revenu mensuel
-- Taux directeurs: banques 8-18%, microfinances 10-24%, fintechs 24-60%
-
-INSTRUCTIONS STRICTES:
-1. Score 0-100 base sur: ratio remboursement, secteur, collateral, anciennete, historique credit, epargne
-2. Un ratio demande/revenu > 50% penalise fortement le score
-3. Un historique credit "bon" augmente le score
-4. L'epargne est un signal positif
-5. analysis: SPECIFIQUE au profil (secteur, montant, revenu, anciennete). Cite les chiffres exacts.
-6. missing_documents: adaptes au profil (pas de bulletins si informel)
-7. improvement_tips: 2-3 conseils SPECIFIQUES actionnables
-
-Retourne CE JSON:
-{{
-  "score": 65,
-  "risk": "Moyen",
-  "analysis": "Texte specifique de 2-3 phrases qui cite les chiffres du profil.",
-  "missing_documents": ["piece_identite", "preuve_revenus"],
-  "improvement_tips": ["Conseil 1 specifique", "Conseil 2 specifique"],
-  "confidence": 0.85
-}}
-
-IMPORTANT: score entre 0 et 100. Sois REALISTE: un petit commerçant avec 150K revenu et 500K demande sans garantie = score bas (~30-45). Un profil stable avec garantie = 60-80."""
+    _log(f"Score deterministe: {result['score']}, risk: {result['risk']}")
+    return result
 
 
 
@@ -355,28 +261,22 @@ def build_first_question() -> str:
 
 
 def process_conversation_turn(answers: list[dict], session_manager) -> str:
-    """Single LLM call per turn. Returns structured JSON with profile + next question.
-    Code handles termination based on stagnation detection in SessionManager."""
+    """Rule engine decides WHAT to ask, LLM only HOW to phrase it."""
 
     hist = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in answers)
     profile_str = json.dumps(session_manager.profile, ensure_ascii=False) if session_manager.profile else "{}"
 
     country = _extract_country(answers)
     partners, products, rules = _get_all_partners(country)
-    partners_ctx = "\n".join(
-        f"- {p['name']} ({p['type']}): {p['min_amount'] or '?'}-{p['max_amount'] or '?'} FCFA. Secteurs: {', '.join(p['sectors'] or [])}. Docs: {', '.join(p['docs'] or [])}."
-        for p in partners[:8]
-    ) if partners else "Aucun partenaire."
-    products_ctx = "\n".join(
-        f"- {pr['partner']} > {pr['product']}: {pr['min_amount'] or '?'}-{pr['max_amount'] or '?'} FCFA, {pr['min_duration']}-{pr['max_duration']}mois. Collateral: {'oui' if pr.get('collateral_required') else 'non'}."
-        for pr in products[:6]
-    ) if products else ""
-    kb_ctx = "\n".join(
-        f"[{r['category']}] {r['title']}: {r['content']}"
-        for r in rules[:5]
-    ) if rules else ""
 
-    prompt = f"""Tu es un agent de credit intelligent pour l'UEMOA (pays: {country}).
+    # Rule engine: determine next criterion to ask about
+    criterion = next_criterion(session_manager.profile, partners, products)
+    if criterion is None:
+        _log("process_conversation_turn: no more criteria needed")
+        return "DONE"
+
+    # LLM: extract updated fields from the latest answer + generate natural question
+    prompt = f"""Tu es un agent de credit pour l'UEMOA (pays: {country}).
 
 HISTORIQUE DE LA CONVERSATION:
 {hist}
@@ -384,56 +284,34 @@ HISTORIQUE DE LA CONVERSATION:
 PROFIL EXISTANT:
 {profile_str}
 
-PARTENAIRES DISPONIBLES:
-{partners_ctx}
+PROCHAINE QUESTION A POSER (thème): "{criterion}"
 
-PRODUITS:
-{products_ctx}
-
-REGLES DE CREDIT:
-{kb_ctx}
-
-Retourne un JSON avec ces champs obligatoires:
-1. "profile": objet contenant TOUTES les informations connues extraites de la conversation (mets a jour depuis le profil existant)
-2. "updated_fields": liste des noms de champs qui ont CHANGE ou ete AJOUTES dans ce tour-ci
-3. "assessment": "sufficient" si tu as assez d'infos pour evaluer la demande, sinon "needs_more"
-4. "reason": explication courte de pourquoi tu as besoin de plus d'infos, ou pourquoi c'est suffisant
-5. "next_question": une question courte et naturelle en francais pour obtenir l'info suivante, ou "DONE" si tu as termine
+Retourne un JSON:
+1. "profile": objet mis à jour avec TOUTES les informations connues
+2. "updated_fields": liste des champs qui ont changé/été ajoutés ce tour
+3. "next_question": reformulation naturelle de "{criterion}" en une question courte, tutoiement, max 15 mots
 
 Regles:
-- Noms de champs explicites en francais (ex: "revenu_mensuel", "montant_pret", "profession", "garantie", "secteur_activite", "duree_remboursement", "epargne")
-- secteur_activite = le SECTEUR DU PRET (ce que l'argent va financer), PAS la profession de l'emprunteur. Ex: voyageur qui code → secteur_activite="voyage", profession="codeur".
-- secteur_activite: STRICTEMENT l'un de ces choix: commerce, agriculture, service, artisanat, industrie, tech, particulier, consommation, voyage, tourisme, sante, education, loisir, habitat. Si aucun ne correspond, mets "particulier".
-- profession = le metier de l'utilisateur (champ libre, pas de contrainte). Ne JAMAIS confondre avec secteur_activite.
-- null si l'info n'est pas encore connue
-- Ne pas inventer des infos
-- updated_fields doit etre PRECIS: seulement les champs qui ont recu une nouvelle valeur ce tour
-- Si updated_fields est vide, le systeme arretra la conversation
-- next_question: max 15 mots, tutoiement, une seule question
-- Garde l'historique en tete pour ne pas poser deux fois la meme question
-
-Guide pour les questions (IMPORTANT):
-- Base-toi sur les PARTENAIRES et PRODUITS ci-dessus pour demander les infos vraiment pertinentes au matching
-- Demande ce qui permet de MATCHER: montant souhaite, duree, revenu, secteur_activite (usage du pret), profession, garanties, RC/patente
-- Pour un pret conso/voyage: secteur_activite = voyage, meme si l'utilisateur est codeur/commercant/etc. La profession est un champ SEPARE.
-- Pour un pret voyage: apres avoir obtenu montant, revenu, duree, passe aux GARANTIES et DOCUMENTS — ne creuse PAS dans les details du travail du client
-- N'invente PAS de champs non pertinents (age, equilibre financier, experience_professionnelle_detaillee, etc.)
-- Si le client n'a pas compris la question precedente, reformule avec des termes plus simples"""
+- Noms de champs: {"montant_pret", "revenu_mensuel", "secteur_activite", "profession", "duree_remboursement", "garantie", "epargne", "credit_history", "RC_ou_patente"}
+- secteur_activite = le SECTEUR DU PRET, pas la profession. STRICTEMENT parmi: commerce, agriculture, service, artisanat, industrie, tech, particulier, consommation, voyage, tourisme, sante, education, loisir, habitat.
+- profession = le metier (champ libre)
+- null si pas encore connu
+- updated_fields PRECIS: seulement les champs qui ont recu une nouvelle valeur
+- Si updated_fields vide, le système considère la réponse insuffisante"""
 
     try:
         resp = client.chat.completions.create(
             model=CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            temperature=0.3,
+            temperature=0.2,
             max_tokens=400,
         )
         result = json.loads(resp.choices[0].message.content)
-        # Post-processing: force secteur_activite to valid list
         profile = result.get("profile", {})
         secteur = profile.get("secteur_activite")
         if secteur:
-            s_lower = secteur.lower().replace("\u00e9", "e")  # sante -> sante
+            s_lower = secteur.lower().replace("\u00e9", "e")
             if s_lower not in VALID_SECTORS:
                 for vs in VALID_SECTORS:
                     if vs in s_lower:
@@ -441,28 +319,24 @@ Guide pour les questions (IMPORTANT):
                         break
                 else:
                     profile["secteur_activite"] = "particulier"
+
         turn_info = session_manager.record_turn(result)
-        _log(f"turn {session_manager.turn_count}: updated={turn_info['updated']}, stagnation={turn_info['stagnation_count']}")
+        _log(f"turn {session_manager.turn_count}: criteria={criterion}, updated={turn_info['updated']}")
 
         should_stop, reason = session_manager.should_stop()
         if should_stop:
             _log(f"process_conversation_turn: stopping ({reason})")
             return "DONE"
 
-        if result.get("assessment") == "sufficient" and not turn_info["updated"]:
-            return "DONE"
-
         next_q = result.get("next_question", "").strip()
-        if next_q.upper() == "DONE":
-            return "DONE"
         if next_q:
             return next_q
 
-        return "Peux-tu en dire plus ?"
+        return default_question(criterion)
 
     except Exception as e:
-        _log(f"process_conversation_turn LLM call failed: {e}")
-        return "Peux-tu reformuler ?"
+        _log(f"process_conversation_turn failed: {e}")
+        return default_question(criterion)
 
 # ==============================================================
 # DOCUMENT REQUESTS — LLM decide quoi demander selon profil + partenaires
@@ -596,7 +470,8 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict], list
         cur.execute(
             """SELECT name, type, min_amount, max_amount, rate, sectors, docs, description, base_rate, max_rate, id
                FROM partners
-               WHERE countries @> ARRAY[%s]::TEXT[]
+               WHERE active = true
+                 AND countries @> ARRAY[%s]::TEXT[]
                ORDER BY name ASC""",
             (country,)
         )
@@ -623,6 +498,7 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict], list
                           pr.collateral_required, pr.requirements, pr.description
                    FROM products pr JOIN partners p ON p.id = pr.partner_id
                    WHERE pr.partner_id = ANY(%s)
+                     AND pr.superseded_at IS NULL
                    ORDER BY pr.annual_rate ASC""",
                 (partner_ids,)
             )
@@ -812,9 +688,16 @@ def build_comparison_report(answers: list[dict], document_extractions: list[dict
     score_data = score_from_answers(answers, document_extractions)
     score = score_data.get("score", 0)
     risk = score_data.get("risk", "N/A")
+    factors = score_data.get("factors", [])
     analysis = score_data.get("analysis", "")
     missing_docs = score_data.get("missing_documents", [])
     tips = score_data.get("improvement_tips", [])
+    if not tips:
+        for f in factors:
+            s = f.get("score", 0)
+            m = f.get("max", 10)
+            if s < m * 0.5:
+                tips.append(f"Améliore ton {f['factor']}: {f['note']}")
 
     if amount_wanted == 0:
         amount_wanted = 500000

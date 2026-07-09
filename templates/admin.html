@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Credo — Administration</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+<nav class="bg-white shadow px-6 py-3 flex items-center justify-between">
+  <h1 class="text-xl font-bold text-gray-800">Credo Admin</h1>
+  <div class="text-sm text-gray-500">
+    <button class="tab-btn px-3 py-1 rounded bg-blue-600 text-white" data-tab="partners">Partenaires</button>
+    <button class="tab-btn px-3 py-1 rounded bg-gray-200" data-tab="products">Produits</button>
+    <button class="tab-btn px-3 py-1 rounded bg-gray-200" data-tab="stale">Périmés</button>
+    <button class="tab-btn px-3 py-1 rounded bg-gray-200" data-tab="audit">Audit</button>
+    <input id="apiKey" type="password" placeholder="Clé API" class="ml-4 px-2 py-1 border rounded text-sm">
+  </div>
+</nav>
+<main class="max-w-6xl mx-auto p-6">
+  <div id="tab-partners" class="tab-content"></div>
+  <div id="tab-products" class="tab-content hidden"></div>
+  <div id="tab-stale" class="tab-content hidden"></div>
+  <div id="tab-audit" class="tab-content hidden"></div>
+</main>
+<script>
+const API_KEY = () => document.getElementById('apiKey').value;
+const HEADERS = () => ({ 'X-Admin-Key': API_KEY(), 'Content-Type': 'application/json' });
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, { headers: HEADERS(), ...opts });
+  if (!r.ok) { alert('Erreur ' + r.status); return null; }
+  return r.json();
+}
+
+function renderPartners(data) {
+  const el = document.getElementById('tab-partners');
+  if (!data) { el.innerHTML = '<p class="text-gray-500">Entrez la clé API</p>'; return; }
+  el.innerHTML = `<h2 class="text-lg font-semibold mb-2">Partenaires (${data.length})</h2>
+    <div class="grid gap-2">${data.map(p => `<div class="bg-white p-3 rounded shadow text-sm">
+      <strong>${p.name}</strong> <span class="text-gray-500">${p.type}</span>
+      <span class="ml-2">${p.min_amount||'?'}-${p.max_amount||'?'} FCFA</span>
+      <span class="ml-2 text-${p.active ? 'green' : 'red'}-600">${p.active ? 'actif' : 'inactif'}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderProducts(data) {
+  const el = document.getElementById('tab-products');
+  if (!data) { el.innerHTML = '<p class="text-gray-500">Entrez la clé API</p>'; return; }
+  el.innerHTML = `<h2 class="text-lg font-semibold mb-2">Produits actifs (${data.length})</h2>
+    <div class="grid gap-2">${data.map(p => `<div class="bg-white p-3 rounded shadow text-sm">
+      <strong>${p.partner_name}</strong> &rsaquo; ${p.name}
+      <span class="ml-2">${p.min_amount||'?'}-${p.max_amount||'?'} FCFA</span>
+      <span class="ml-2">${p.annual_rate||'?'}%</span>
+      <span class="ml-2 text-xs text-gray-400">v${p.version||1}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderStale(data) {
+  const el = document.getElementById('tab-stale');
+  if (!data) { el.innerHTML = '<p class="text-gray-500">Entrez la clé API</p>'; return; }
+  el.innerHTML = `<h2 class="text-lg font-semibold mb-2">Produits périmés (>30j sans vérification)</h2>
+    ${data.length ? `<div class="grid gap-2">${data.map(p => `<div class="bg-white p-3 rounded shadow text-sm border-l-4 border-yellow-400">
+      <strong>${p.partner_name}</strong> &rsaquo; ${p.name}
+      <span class="ml-2 text-yellow-600">Dernière vérif: ${p.last_verified_at || 'jamais'}</span>
+    </div>`).join('')}</div>` : '<p class="text-green-600">Tout est à jour !</p>'}`;
+}
+
+function renderAudit(data) {
+  const el = document.getElementById('tab-audit');
+  if (!data) { el.innerHTML = '<p class="text-gray-500">Entrez la clé API</p>'; return; }
+  el.innerHTML = `<h2 class="text-lg font-semibold mb-2">Audit (100 derniers)</h2>
+    <div class="space-y-1">${data.map(a => `<div class="text-xs text-gray-600">
+      <span class="text-gray-400">${a.created_at}</span>
+      <span class="font-medium">${a.action}</span> ${a.target}
+    </div>`).join('')}</div>`;
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('.tab-btn').forEach(b => { b.className = b.className.replace('bg-blue-600 text-white', 'bg-gray-200'); });
+    btn.className = 'tab-btn px-3 py-1 rounded bg-blue-600 text-white';
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-' + tab).classList.remove('hidden');
+    if (tab === 'partners') renderPartners(await api('/admin/api/partners'));
+    else if (tab === 'products') renderProducts(await api('/admin/api/products'));
+    else if (tab === 'stale') renderStale(await api('/admin/api/stale'));
+    else if (tab === 'audit') renderAudit(await api('/admin/api/audit'));
+  });
+});
+</script>
+</body>
+</html>
