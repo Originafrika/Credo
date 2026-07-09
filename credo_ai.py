@@ -361,13 +361,37 @@ def process_conversation_turn(answers: list[dict], session_manager) -> str:
     hist = "\n".join(f"Q: {a.get('q','')}\nR: {a.get('a','')}" for a in answers)
     profile_str = json.dumps(session_manager.profile, ensure_ascii=False) if session_manager.profile else "{}"
 
-    prompt = f"""Tu es un agent de credit intelligent pour l'UEMOA.
+    country = _extract_country(answers)
+    partners, products, rules = _get_all_partners(country)
+    partners_ctx = "\n".join(
+        f"- {p['name']} ({p['type']}): {p['min_amount'] or '?'}-{p['max_amount'] or '?'} FCFA. Secteurs: {', '.join(p['sectors'] or [])}. Docs: {', '.join(p['docs'] or [])}."
+        for p in partners[:8]
+    ) if partners else "Aucun partenaire."
+    products_ctx = "\n".join(
+        f"- {pr['partner']} > {pr['product']}: {pr['min_amount'] or '?'}-{pr['max_amount'] or '?'} FCFA, {pr['min_duration']}-{pr['max_duration']}mois. Collateral: {'oui' if pr.get('collateral_required') else 'non'}."
+        for pr in products[:6]
+    ) if products else ""
+    kb_ctx = "\n".join(
+        f"[{r['category']}] {r['title']}: {r['content']}"
+        for r in rules[:5]
+    ) if rules else ""
+
+    prompt = f"""Tu es un agent de credit intelligent pour l'UEMOA (pays: {country}).
 
 HISTORIQUE DE LA CONVERSATION:
 {hist}
 
 PROFIL EXISTANT:
 {profile_str}
+
+PARTENAIRES DISPONIBLES:
+{partners_ctx}
+
+PRODUITS:
+{products_ctx}
+
+REGLES DE CREDIT:
+{kb_ctx}
 
 Retourne un JSON avec ces champs obligatoires:
 1. "profile": objet contenant TOUTES les informations connues extraites de la conversation (mets a jour depuis le profil existant)
@@ -377,14 +401,21 @@ Retourne un JSON avec ces champs obligatoires:
 5. "next_question": une question courte et naturelle en francais pour obtenir l'info suivante, ou "DONE" si tu as termine
 
 Regles:
-- Noms de champs explicites en francais (ex: "revenu_mensuel", "montant_pret", "activite", "garantie", "secteur_activite", "duree_remboursement", "epargne", "age")
+- Noms de champs explicites en francais (ex: "revenu_mensuel", "montant_pret", "activite", "garantie", "secteur_activite", "duree_remboursement", "epargne")
 - secteur_activite: STRICTEMENT l'un de ces choix: commerce, agriculture, service, artisanat, industrie, tech, particulier, consommation, voyage, tourisme, sante, education, loisir, habitat. Si aucun ne correspond, mets "particulier".
 - null si l'info n'est pas encore connue
 - Ne pas inventer des infos
 - updated_fields doit etre PRECIS: seulement les champs qui ont recu une nouvelle valeur ce tour
 - Si updated_fields est vide, le systeme arretra la conversation
 - next_question: max 15 mots, tutoiement, une seule question
-- Garde l'historique en tete pour ne pas poser deux fois la meme question"""
+- Garde l'historique en tete pour ne pas poser deux fois la meme question
+
+Guide pour les questions (IMPORTANT):
+- Base-toi sur les PARTENAIRES et PRODUITS ci-dessus pour demander les infos vraiment pertinentes au matching
+- Demande ce qui permet de MATCHER: montant souhaite, duree, revenu, secteur exact, garanties, RC/patente
+- Pour un particulier/consommation: demande la profession, le revenu, le montant, la duree, et l'usage du pret
+- N'invente PAS de champs non pertinents (age, equilibre financier, etc.) — seul le revenu compte
+- Si le client n'a pas compris la question precedente, reformule avec des termes plus simples"""
 
     try:
         resp = client.chat.completions.create(
