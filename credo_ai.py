@@ -27,7 +27,7 @@ def _get_partners(amount: int, sector_hint: str = "", country: str = "TG") -> tu
         conn = psycopg2.connect(NEON_DSN)
         cur = conn.cursor()
 
-        sectors = ['commerce', 'agriculture', 'service', 'artisanat']
+        sectors = ['commerce', 'agriculture', 'service', 'artisanat', 'particulier', 'voyage', 'sante', 'education']
         if sector_hint:
             for s in sectors:
                 if s in sector_hint.lower():
@@ -378,6 +378,7 @@ Retourne un JSON avec ces champs obligatoires:
 
 Regles:
 - Noms de champs explicites en francais (ex: "revenu_mensuel", "montant_pret", "activite", "garantie", "secteur_activite", "duree_remboursement", "epargne", "age")
+- secteur_activite: STRICTEMENT l'un de ces choix: commerce, agriculture, service, artisanat, industrie, tech, particulier, consommation, voyage, tourisme, sante, education, loisir, habitat. Si aucun ne correspond, mets "particulier".
 - null si l'info n'est pas encore connue
 - Ne pas inventer des infos
 - updated_fields doit etre PRECIS: seulement les champs qui ont recu une nouvelle valeur ce tour
@@ -394,6 +395,18 @@ Regles:
             max_tokens=400,
         )
         result = json.loads(resp.choices[0].message.content)
+        # Post-processing: force secteur_activite to valid list
+        profile = result.get("profile", {})
+        secteur = profile.get("secteur_activite")
+        if secteur:
+            s_lower = secteur.lower().replace("\u00e9", "e")  # sante -> sante
+            if s_lower not in VALID_SECTORS:
+                for vs in VALID_SECTORS:
+                    if vs in s_lower:
+                        profile["secteur_activite"] = vs
+                        break
+                else:
+                    profile["secteur_activite"] = "particulier"
         turn_info = session_manager.record_turn(result)
         _log(f"turn {session_manager.turn_count}: updated={turn_info['updated']}, stagnation={turn_info['stagnation_count']}")
 
@@ -474,10 +487,12 @@ Retourne CE JSON:
 
 Regles:
 - Prioritaires: ceux qui debloquent le plus de partenaires.
+- Si le profil est personnel/consommation/voyage/sante/education: preuve_revenus, contrat_travail, piece_identite, justificatif_domicile.
+- Si le profil est voyage: ajouter devis_voyage ou justificatif_reservation.
 - Si le profil est informel: photo_activite et id_card sont les plus utiles.
 - Si le profil a des garanties: photo garantie ou titre de propriete.
 - Si le profil a un RC/patente: business_license.
-- Si le profil a deja un historique credit: relevé bancaire ou preuve.
+- Si le profil a deja un historique credit: releve bancaire ou preuve.
 - Chaque document doit avoir un label clair en francais, "tu".
 - optional: true si le document est utile mais pas bloquant.
 - Ne demande que les documents vraiment pertinents pour CE profil precis et CES partenaires."""
@@ -596,6 +611,14 @@ def _get_all_partners(country: str = "TG") -> tuple[list[dict], list[dict], list
         return [], [], []
 
 
+VALID_SECTORS = [
+    "commerce", "agriculture", "service", "artisanat", "industrie", "tech",
+    "particulier", "consommation", "voyage", "tourisme", "sante", "education",
+    "loisir", "habitat",
+]
+
+CONSUMER_SECTORS = {"particulier", "consommation", "voyage", "tourisme", "sante", "education", "loisir", "habitat"}
+
 def _extract_sector(answers: list[dict]) -> str:
     text = " ".join(a.get("a", "") for a in answers).lower()
     sectors = {
@@ -605,15 +628,17 @@ def _extract_sector(answers: list[dict]) -> str:
         "artisanat": ["artisan", "atelier", "couture", "menuiserie", "mecanique"],
         "industrie": ["industrie", "production", "fabrication", "usine"],
         "tech": ["tech", "ia", "numerique", "informatique", "developpement"],
+        "particulier": ["particulier", "personnel", "consommation", "perso"],
+        "voyage": ["voyage", "tourisme", "vacances", "voyager", "cap ver"],
+        "sante": ["sante", "sant\u00e9", "medical", "hopital", "soins"],
+        "education": ["education", "ecole", "universite", "etudes", "formation", "scolarite"],
+        "loisir": ["loisir", "loisirs", "mariage", "evenement", "fete"],
+        "habitat": ["habitat", "maison", "logement", "renovation", "construction"],
     }
     for sector, keywords in sectors.items():
         if any(kw in text for kw in keywords):
             return sector
-    for a in answers:
-        q = (a.get("q") or "").lower()
-        if "secteur" in q or "activite" in q:
-            return a.get("a", "").strip()[:30] or "non precise"
-    return "non precise"
+    return "particulier"
 
 
 def _extract_has_collateral(answers: list[dict]) -> bool:
@@ -796,11 +821,19 @@ def build_comparison_report(answers: list[dict], document_extractions: list[dict
             strengths.append(f"Montant compatible ({p_min:,}-{p_max:,} FCFA)")
 
         # Sector check
-        if p["sectors"] and sector not in ["non precise"]:
+        is_consumer = sector.lower() in CONSUMER_SECTORS
+        if p["sectors"]:
             p_sectors = [s.strip().lower() for s in p["sectors"]]
             if sector.lower() in p_sectors:
                 match_score += 25
                 strengths.append(f"Secteur '{sector}' finance")
+            elif is_consumer:
+                # Consumer loans: don't penalize if partner has any consumer sector
+                if any(s in p_sectors for s in CONSUMER_SECTORS):
+                    match_score += 15
+                    strengths.append(f"Credit consommation possible")
+                else:
+                    pass  # neutral for consumer loans
             else:
                 issues.append(f"Secteur '{sector}' non couvert")
 
@@ -873,6 +906,7 @@ def build_comparison_report(answers: list[dict], document_extractions: list[dict
             "sector": sector,
             "collateral": collateral,
             "business_registration": business_reg,
+            "is_consumer": sector.lower() in CONSUMER_SECTORS,
         },
         "top_recommendations": top,
         "all_comparisons": all_comparisons,
