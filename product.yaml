@@ -1,0 +1,17 @@
+nom: credo
+venture: origin
+archetype: fintech_credit
+description: "Courtier crédit IA B2C — en test avec 3 testeurs"
+repo: git@github.com:originafrika/credo.git
+demo_url: credo7.lovable.app
+phase_state:
+  phase_actuelle: 2
+  palier_actuel: "2.2"
+  paliers:
+    "2.1": {nom: "Prototype fonctionnel", clos: true}
+    "2.2": {nom: "Test utilisateur", clos: true}
+    "2.3": {nom: "Premiers retours", clos: false}
+  gate_criteres:
+    prototype_valide: true
+    retours_positifs: false
+    modele_reproductible: false
